@@ -1,0 +1,5 @@
+Tokenizer:
+    type: "Byte-Pair Encoding"
+    savepath: "Preprocess"
+    corpus_path: "corpus.txt"
+    vocab_size: 20_000
