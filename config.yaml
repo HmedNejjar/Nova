@@ -3,3 +3,10 @@ Tokenizer:
     savepath: "Preprocess"
     corpus_path: "corpus.txt"
     vocab_size: 20_000
+
+Model:
+    embed_dim: 512   
+    num_heads: 8     
+    max_seq_len: 512 
+    num_layers: 6    
+    rope_base: 10_000
