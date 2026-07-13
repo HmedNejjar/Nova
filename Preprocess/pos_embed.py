@@ -41,6 +41,6 @@ class RoPE:
         x1, x2 = X.chunk(2, dim=-1)
         
         x1_rot = x1 * cos - x2 * sin
-        x2_rot = x1 * sin - x2 * cos
+        x2_rot = x1 * sin + x2 * cos
         
         return torch.cat([x1_rot, x2_rot], dim=-1)
