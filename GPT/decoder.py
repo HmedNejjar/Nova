@@ -62,3 +62,23 @@ class DecoderBlock(nn.Module):
         swiglu = swish * value
         
         return self.linear2(swiglu)
+
+class Decoder(nn.Module):
+    def __init__(self, embed_dim: int, num_layers: int, num_heads: int, max_seq_len: int, rope_base: int) -> None:
+        super().__init__()
+        
+        self.num_layers = num_layers
+        
+        self.blocks = nn.ModuleList(DecoderBlock(embed_dim= embed_dim, num_heads= num_heads, max_seq_len= max_seq_len, rope_base= rope_base)
+                                    for _ in range(num_layers))
+        
+    def forward(self, X: Tensor) -> Tensor:
+        
+        for block in self.blocks:
+            X = block(X)
+        
+        return X
+    
+    
+        
+        
