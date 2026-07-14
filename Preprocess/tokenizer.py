@@ -96,7 +96,7 @@ class BPE:
         word_freq = self.get_words_count(corpus= corpus)
         
         # Start by getting speacial characters and individual characters as tokens
-        special_tokens, alphabets = ("<pad>", "<unk>", "<bos>", "<eos>", "<sep>"), set()
+        special_tokens, alphabets = self._special_tokens(), set()
         for word in word_freq.keys():
             alphabets.update(word)
             
@@ -123,9 +123,18 @@ class BPE:
     
     def encode(self, text: str) -> list:
         """Encode the input text into a list of token IDs based on the learned vocabulary."""
-        # ===== 1. GROUP CHARACTERS INTO AVAILABLE MERGES IN MEMORY =====
+        
+        special_tokens = set(self._special_tokens())
         words = text.split()
         token_ids = []
+        
+        # ===== 1. SPECIAL TOKEN CHECK -- skip BPE entirely if exact match =====
+        for word in words:
+            if word in special_tokens:
+                token_ids.append(self.vocab[word])
+                continue
+        
+        # ===== 2. GROUP CHARACTERS INTO AVAILABLE MERGES IN MEMORY =====
         
         for word in words:
             word_token = tuple(list(word) + ["</w>"])
@@ -142,7 +151,7 @@ class BPE:
                         i += 1
                 word_token = tuple(new_tokens)
                 
-        # ===== 2. CONVERT TOKENS INTO TOKEN IDS FROM self.vocab ===== 
+        # ===== 3. CONVERT TOKENS INTO TOKEN IDS FROM self.vocab ===== 
             for token in word_token:
                 token_ids.append(self.vocab.get(token, self.vocab.get("<unk>")))  # Use <unk> for unknown tokens
         
@@ -163,6 +172,10 @@ class BPE:
         text = text.replace("</w>", " ").strip()
         
         return str(text)
+    
+    def _special_tokens(self) -> tuple:
+        """Return a tuple of special tokens used in the tokenizer."""
+        return ("<pad>", "<unk>", "<bos>", "<eos>", "<|user|>", "<|assistant|>")
     
 
 if __name__ == "__main__":
