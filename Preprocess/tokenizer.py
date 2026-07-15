@@ -134,9 +134,7 @@ class BPE:
                 token_ids.append(self.vocab[word])
                 continue
         
-        # ===== 2. GROUP CHARACTERS INTO AVAILABLE MERGES IN MEMORY =====
-        
-        for word in words:
+            # ===== 2. GROUP CHARACTERS INTO AVAILABLE MERGES IN MEMORY =====
             word_token = tuple(list(word) + ["</w>"])
             
             for pair, merged in self.merges.items():
