@@ -101,6 +101,8 @@ class BPE:
             alphabets.update(word)
             
         self.vocab = {tok: i for i, tok in enumerate(special_tokens + tuple(sorted(alphabets)))}
+        
+        self.merge_ranks = {}
 
         print("starting training")
         j = 1
@@ -116,7 +118,7 @@ class BPE:
             
             self.vocab[new_token] = len(self.vocab)
             self.merges[best_pair] = new_token       
-            
+            self.merge_ranks[best_pair] = j - 1            
             print(f"finished iteation {j}, vocab length: {len(self.vocab)}"); j+=1
             
         return (self.vocab, self.merges)
@@ -135,19 +137,25 @@ class BPE:
                 continue
         
             # ===== 2. GROUP CHARACTERS INTO AVAILABLE MERGES IN MEMORY =====
-            word_token = tuple(list(word) + ["</w>"])
+            word_token = list(word) + ["</w>"]
             
-            for pair, merged in self.merges.items():
-                new_tokens, i = [], 0
-                
+            while len(word_token) > 1:
+                # find the lowest-rank (highest-priority) pair PRESENT in this word
+                pairs_here = [(word_token[i], word_token[i+1]) for i in range(len(word_token) - 1)]
+                candidate = min(pairs_here, key=lambda p: self.merge_ranks.get(p, float("inf")), default=None)
+                if candidate is None or self.merge_ranks.get(candidate, float("inf")) == float("inf"):
+                    break   # no known merge applies anymore
+
+                # merge every occurrence of that pair in this word
+                new_token, i = [], 0
                 while i < len(word_token):
-                    if i < len(word_token) - 1 and (word_token[i], word_token[i+1]) == pair:
-                        new_tokens.append(merged)
+                    if i < len(word_token) - 1 and (word_token[i], word_token[i+1]) == candidate:
+                        new_token.append(word_token[i] + word_token[i+1])
                         i += 2
                     else:
-                        new_tokens.append(word_token[i])
+                        new_token.append(word_token[i])
                         i += 1
-                word_token = tuple(new_tokens)
+                word_token = new_token
                 
         # ===== 3. CONVERT TOKENS INTO TOKEN IDS FROM self.vocab ===== 
             for token in word_token:
