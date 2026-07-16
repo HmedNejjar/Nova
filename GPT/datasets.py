@@ -8,14 +8,15 @@ from torch.utils.data import Dataset
 from Preprocess.tokenizer import BPE
 
 class VocabDataset(Dataset):
-    def __init__(self, tokenized_ds: list[int], seq_len: int, stride: int = 2) -> None:
+    def __init__(self, tokenized_ds: list[int], seq_len: int, stride_coeff: int = 2) -> None:
         super().__init__()
         
         self.tokenized_data = torch.tensor(tokenized_ds)
         self.seq_len = seq_len
+        self.stride = seq_len // stride_coeff
         
         # Create list of starting indices for each window
-        self.start_indices = list(range(0, len(self.tokenized_data) - seq_len, stride))
+        self.start_indices = list(range(0, len(self.tokenized_data) - seq_len, self.stride))
         assert len(self.start_indices) > 0, f"seq_len={seq_len} too large for corpus of length {len(self.tokenized_data)}"
         
     def __len__(self) -> int:
