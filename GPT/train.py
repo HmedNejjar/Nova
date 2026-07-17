@@ -155,6 +155,9 @@ if __name__ == "__main__":
     for epoch in range(EPOCHS):
         train_loss, train_accuracy, eval_loss, eval_accuracy = train(Nova, optimizer, loss_fn, scaler, (vocab_train_dl, vocab_test_dl), epoch)
         
+        print(f"Train loss: {train_loss:.3f} || Train Accuracy: {train_accuracy:.3f}")
+        print(f"Eval loss: {eval_loss:.3f} || Eval Accuracy: {eval_accuracy:.3f}")
+        
         train_accuracy_graph.append(train_accuracy)
         train_loss_graph.append(train_loss)
         
