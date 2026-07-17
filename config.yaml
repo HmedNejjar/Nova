@@ -2,11 +2,21 @@ Tokenizer:
     type: "Byte-Pair Encoding"
     savepath: "Preprocess"
     corpus_path: "corpus.txt"
-    vocab_size: 20_000
+    vocab_size: 10_000
 
 Model:
-    embed_dim: 512   
+    embed_dim: 768   
     num_heads: 8     
     max_seq_len: 512 
-    num_layers: 6    
+    num_layers: 6
+    stride_coeff: 2
+    learning_rate : 1e-4
     rope_base: 10_000
+
+Train:
+    epochs: 10
+    batch_size: 8
+
+Datasets:
+    SimpleStories_train : "Preprocess\\Datasets\\Vocab_train.pkl"
+    SimpleStories_test : Preprocess\\Datasets\\Vocab_test.pkl
