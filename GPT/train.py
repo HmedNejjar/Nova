@@ -164,7 +164,9 @@ if __name__ == "__main__":
         test_accuracy_graph.append(eval_accuracy)
         test_loss_graph.append(eval_loss)
         
-    epochs = list(range(0, EPOCHS + 1))
+    # ---- Plot the loss and accuracy graphs ----
+        
+    epochs = list(range(EPOCHS))
 
     train_fig, train_ax = plt.subplots(figsize=(8, 4))
     train_ax.plot(epochs, train_accuracy_graph, color='orange', label='Accuracy')
