@@ -10,6 +10,10 @@ class BPE:
         # Store learned merge operations and the current vocabulary mapping.
         self.merges = self._load_merges()
         self.vocab = self._load_vocab()
+        self.merge_ranks = self._load_merge_ranks()
+
+        if not self.vocab:
+            self.vocab = {token: i for i, token in enumerate(self._special_tokens())}
 
     def _load_merges(self) -> dict:
         """Load merges from JSON file if it exists."""
@@ -46,6 +50,12 @@ class BPE:
                 print(f"Error loading vocab: {e}")
                 return {}
         return {}
+
+    def _load_merge_ranks(self) -> dict:
+        """Rebuild merge ranks from previously loaded merges when possible."""
+        if not self.merges:
+            return {}
+        return {pair: rank for rank, pair in enumerate(self.merges.keys())}
     
     def get_words_count(self, corpus: str) -> dict:
         """Count how often each word appears after splitting it into character tokens."""
@@ -186,17 +196,17 @@ class BPE:
 
 if __name__ == "__main__":
     CONFIG_FILEPATH = r"G:\Projects\Python\Nova\config.yaml"
-    with open(CONFIG_FILEPATH, 'r') as f:
+    with open(CONFIG_FILEPATH, 'r', encoding='utf-8') as f:
         config = yaml.safe_load(f)
-        
-        vocab_size=config["Tokenizer"]["vocab_size"]
-        corpus_file = config["Tokenizer"]["corpus_file"]
-        savepath = config["Tokenizer"]["savefile_path"]
-        
-        with open(corpus_file, 'r') as f:
+
+        vocab_size = config["Tokenizer"]["vocab_size"]
+        corpus_path = config["Tokenizer"]["corpus_path"]
+        savepath = config["Tokenizer"]["savepath"]
+
+        with open(corpus_path, 'r', encoding='utf-8') as f:
             corpus = f.read()
-        
-    bpe = BPE(vocab_size= vocab_size, savepath= savepath)
+
+    bpe = BPE(vocab_size=vocab_size, savepath=savepath)
 
     # Example usage
     text = "hi guys this is a Byte pair encoding implementation using python from scratch."
