@@ -11,7 +11,7 @@ from torch.utils.data import DataLoader
 from torch.optim import AdamW
 from torch.cuda.amp import autocast, GradScaler
 from tqdm import tqdm
-import matplotlib.pyplot as plt
+import plotly.graph_objects as go
 
 from Nova import NovaLM
 from Preprocess.tokenizer import BPE
@@ -92,7 +92,7 @@ def train(model: NovaLM, optimizer: AdamW, loss_fn: nn.CrossEntropyLoss,scaler: 
     total_tokens = 0.0
     num_batches = 0
 
-    pbar = tqdm(train_dl, desc=f"Training Epoch {epoch}/{EPOCHS}")
+    pbar = tqdm(train_dl, desc=f"Training Epoch {epoch + 1}/{EPOCHS}")
 
     for x, y in pbar:
         x, y = x.to(DEVICE), y.to(DEVICE)
@@ -129,6 +129,10 @@ def train(model: NovaLM, optimizer: AdamW, loss_fn: nn.CrossEntropyLoss,scaler: 
 if __name__ == "__main__":
     Nova = NovaLM(vocab_size= VOCAB_SIZE, embed_dim= EMBED_DIM, num_layers= NUM_LAYERS, num_heads= NUM_HEADS, max_seq_len= MAX_SEQ_LEN, rope_base= ROPE_BASE).to(DEVICE)
     bpe_tokenizer = BPE(vocab_size= VOCAB_SIZE, savepath= SAVEPATH)
+    
+    if MODEL_SAVE_PATH.exists():
+        print(f"Loading model from {MODEL_SAVE_PATH}")
+        Nova.load_state_dict(torch.load(MODEL_SAVE_PATH, map_location=DEVICE))
 
     with open(VOCAB_TRAIN, 'rb') as f:
         tokenized_vocab_train = pickle.load(f)
@@ -158,40 +162,33 @@ if __name__ == "__main__":
         print(f"Train loss: {train_loss:.3f} || Train Accuracy: {train_accuracy:.3f}")
         print(f"Eval loss: {eval_loss:.3f} || Eval Accuracy: {eval_accuracy:.3f}")
         
+        best_accuracy = max(test_accuracy_graph) if test_accuracy_graph else float('-inf')
+        if eval_accuracy > best_accuracy:
+            torch.save(Nova.state_dict(), MODEL_SAVE_PATH)
+            
         train_accuracy_graph.append(train_accuracy)
         train_loss_graph.append(train_loss)
         
         test_accuracy_graph.append(eval_accuracy)
         test_loss_graph.append(eval_loss)
         
+        
     # ---- Plot the loss and accuracy graphs ----
         
-    epochs = list(range(EPOCHS))
+    epochs = list(range(1, len(train_accuracy_graph) + 1))  # derived from actual data, not config EPOCHS
 
-    train_fig, train_ax = plt.subplots(figsize=(8, 4))
-    train_ax.plot(epochs, train_accuracy_graph, color='orange', label='Accuracy')
-    train_ax.plot(epochs, train_loss_graph, color='blue', label='Loss')
-    train_ax.set_title('Training Metrics')
-    train_ax.set_xlabel('Epoch')
-    train_ax.set_ylabel('Value')
-    train_ax.legend()
-    train_ax.grid(True, alpha=0.3)
-    train_fig.tight_layout()
-    train_fig.savefig('train_metrics.png')
-    plt.show()
+    acc_fig = go.Figure()
+    acc_fig.add_trace(go.Scatter(x=epochs, y=train_accuracy_graph, name="Train Accuracy", line=dict(color="orange")))
+    acc_fig.add_trace(go.Scatter(x=epochs, y=test_accuracy_graph, name="Test Accuracy", line=dict(color="green")))
+    acc_fig.update_layout(title="Accuracy over Epochs", xaxis_title="Epoch", yaxis_title="Accuracy", autosize= True, height=800)
+    acc_fig.write_html(str(ROOT / "accuracy_metrics.html"))
 
-    eval_fig, eval_ax = plt.subplots(figsize=(8, 4))
-    eval_ax.plot(epochs, test_accuracy_graph, color='orange', label='Accuracy')
-    eval_ax.plot(epochs, test_loss_graph, color='blue', label='Loss')
-    eval_ax.set_title('Evaluation Metrics')
-    eval_ax.set_xlabel('Epoch')
-    eval_ax.set_ylabel('Value')
-    eval_ax.legend()
-    eval_ax.grid(True, alpha=0.3)
-    eval_fig.tight_layout()
-    eval_fig.savefig('eval_metrics.png')
-    plt.show()
+    loss_fig = go.Figure()
+    loss_fig.add_trace(go.Scatter(x=epochs, y=train_loss_graph, name="Train Loss", line=dict(color="blue")))
+    loss_fig.add_trace(go.Scatter(x=epochs, y=test_loss_graph, name="Test Loss", line=dict(color="red")))
+    loss_fig.update_layout(title="Loss over Epochs", xaxis_title="Epoch", yaxis_title="Loss", autosize= True, height=800)
+    loss_fig.write_html(str(ROOT / "loss_metrics.html"))
 
-    print('Saved train_metrics.png and eval_metrics.png')
+    print("Saved accuracy_metrics.html and loss_metrics.html")
 
 
