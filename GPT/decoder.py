@@ -25,12 +25,12 @@ class DecoderBlock(nn.Module):
         # Batched MHA instance
         self.MultiHeadAttention = BatchedMultiHeadAttention(embed_dim= embed_dim, num_heads= num_heads, max_seq_len= max_seq_len, rope_base= rope_base)
         
-    def forward(self, X: Tensor) -> Tensor:
+    def forward(self, X: Tensor, cache: dict | None = None) -> tuple[Tensor, dict]:
         # 1. Normalize X
         X_norm = self.norm1(X)
         
         # 2. Apply Multi-Head Attention
-        attn_out = self.MultiHeadAttention(X_norm)
+        attn_out, new_cache = self.MultiHeadAttention(X_norm, cache)
         
         # 3. Add residual connection
         X = X + attn_out
@@ -44,7 +44,7 @@ class DecoderBlock(nn.Module):
         # 6. Add residual connection
         X = X + ffn_out
         
-        return X
+        return (X, new_cache)
     
     def FFN_SwiGLU(self, x: Tensor) -> Tensor:
         """
@@ -72,12 +72,16 @@ class Decoder(nn.Module):
         self.blocks = nn.ModuleList(DecoderBlock(embed_dim= embed_dim, num_heads= num_heads, max_seq_len= max_seq_len, rope_base= rope_base)
                                     for _ in range(num_layers))
         
-    def forward(self, X: Tensor) -> Tensor:
+    def forward(self, X: Tensor, cache_list: list[dict] | None) -> tuple[Tensor, list[dict]]:
+        new_cache_list = []
         
-        for block in self.blocks:
-            X = block(X)
-        
-        return X
+        for i, block in enumerate(self.blocks):
+            layer_cache = cache_list[i] if cache_list is not None else None
+            
+            X, new_cache = block(X, layer_cache)
+            new_cache_list.append(new_cache)
+                
+        return (X, new_cache_list)
     
     
         
