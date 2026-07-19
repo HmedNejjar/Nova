@@ -38,11 +38,11 @@ MAX_SEQ_LEN = model_config["max_seq_len"]
 STRIDE_COEFF = model_config["stride_coeff"]
 LR = float(model_config["learning_rate"])
 ROPE_BASE = model_config["rope_base"]
+MODEL_SAVE_PATH = ROOT / Path(model_config["savepath"])
 
 EPOCHS = train_config["epochs"]
 BATCH_SIZE = train_config["batch_size"]
 
-MODEL_SAVE_PATH = ROOT / Path(r'Model\\best_model.pth')
 
 DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
 print(f"Training on {DEVICE}")
