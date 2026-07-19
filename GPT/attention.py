@@ -29,13 +29,15 @@ class BatchedMultiHeadAttention(nn.Module):
         #Computation of attention output
         self.out_proj = nn.Linear(embed_dim, embed_dim)
         
-    def forward(self, X: Tensor) -> Tensor:
+    def forward(self, X: Tensor, cache: dict | None = None) -> tuple[Tensor, dict]:
         """
         Args:
             X: Input tensor of shape (batch_size, seq_len T, embed_dim d)
+            cache: KV cache stored in a dict if available
 
         Returns:
             Tensor of shape (batch_size, seq_len T, embed_dim d) after applying multi-head attention
+            New cache containing all values of K and V
         """
         B, T, d = X.shape
         
@@ -49,19 +51,38 @@ class BatchedMultiHeadAttention(nn.Module):
         V = V.view(B, T, self.num_heads, self.head_dim)
         
         # Apply RoPE to Q and K
-        Q = self.rope.apply_rotary(Q)
-        K = self.rope.apply_rotary(K)
+        offset = cache["K"].shape[2] if cache is not None else 0
+        
+        Q = self.rope.apply_rotary(Q, offset= offset)
+        K = self.rope.apply_rotary(K, offset= offset)
         
         # Transpose to (B, n_heads, T, head_dim) so matmul batches over (B, n_heads)
         Q = Q.transpose(1, 2)  # (B, n_heads, T, head_dim)
         K = K.transpose(1, 2)  # (B, n_heads, T, head_dim)
         V = V.transpose(1, 2)  # (B, n_heads, T, head_dim)
         
+        # Concat the cache for inference
+        if cache is not None:
+            K = torch.cat([cache["K"], K], dim= 2) # Concat on T dimension
+            V = torch.cat([cache["V"], V], dim= 2) # Concat on T dimension
+            
+        new_cache = {'K': K,
+                     'V': V}
+        
         # Compute score
         scores: Tensor = (Q @ K.transpose(-2, -1)) / self.head_dim ** 0.5
         
+        # Set a general causal mask using Q_len/K_len instead of classic (T, T)
+        Q_len = Q.shape[2]
+        K_len = K.shape[2]
+        cache_offset = K_len - Q_len
+        
+        row = torch.arange(Q_len, device=X.device).unsqueeze(1)
+        col = torch.arange(K_len, device=X.device).unsqueeze(0)
+        
+        causal_mask = (col > row + cache_offset).unsqueeze(0).unsqueeze(0)
+        
         # Apply causal mask on scores
-        causal_mask = torch.triu(torch.ones(T, T, device=X.device), diagonal= 1).unsqueeze(0).unsqueeze(0).bool()
         scores = scores.masked_fill(causal_mask, float('-inf'))
         
         # Compute attention weights
@@ -75,7 +96,7 @@ class BatchedMultiHeadAttention(nn.Module):
         attn_out = attn_out.reshape(B, T, d)
         
         # Final linear projection
-        return self.out_proj(attn_out)
+        return (self.out_proj(attn_out), new_cache)
         
         
         

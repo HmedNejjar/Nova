@@ -18,7 +18,7 @@ class RoPE:
         self.cos = torch.cos(angles)
         self.sin = torch.sin(angles)
         
-    def apply_rotary(self, X: Tensor) -> Tensor:
+    def apply_rotary(self, X: Tensor, offset: int = 0) -> Tensor:
         """
         Apply Rotary Position Embedding (RoPE) to the input tensor.
 
@@ -29,14 +29,15 @@ class RoPE:
 
         Args:
             X: Input tensor of shape (batch_size, T, n_heads, head_dim)
+            offset: Offset for the position indices, useful for caching in inference
 
         Returns:
             Tensor with rotary embeddings applied, same shape as input
         """
         
         T = X.shape[1]
-        cos = self.cos[:T].to(X.device).unsqueeze(0).unsqueeze(2)
-        sin = self.sin[:T].to(X.device).unsqueeze(0).unsqueeze(2)
+        cos = self.cos[offset: offset + T].to(X.device).unsqueeze(0).unsqueeze(2)
+        sin = self.sin[offset: offset + T].to(X.device).unsqueeze(0).unsqueeze(2)
         
         x1, x2 = X.chunk(2, dim=-1)
         
