@@ -100,7 +100,7 @@ def train(model: NovaLM, optimizer: AdamW, loss_fn: nn.CrossEntropyLoss,scaler: 
         optimizer.zero_grad()
         
         with autocast(enabled= (DEVICE == 'cuda')):
-            logits = model(x)
+            logits, _ = model(x) # discard the cache, training never uses it
             loss = loss_fn(logits.view(-1, VOCAB_SIZE), y.view(-1))
             
         scaler.scale(loss).backward()
