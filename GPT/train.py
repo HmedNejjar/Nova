@@ -198,12 +198,12 @@ if __name__ == "__main__":
     acc_fig.add_trace(go.Scatter(x=epochs, y=train_accuracy_graph, name="Train Accuracy", line=dict(color="orange")))
     acc_fig.add_trace(go.Scatter(x=epochs, y=test_accuracy_graph, name="Test Accuracy", line=dict(color="green")))
     acc_fig.update_layout(title="Accuracy over Epochs", xaxis_title="Epoch", yaxis_title="Accuracy", autosize= True, height=800)
-    acc_fig.write_html(str(METRICS_PATH))
+    acc_fig.write_html(str(METRICS_PATH / "accuracy_metrics.html"))
 
     loss_fig = go.Figure()
     loss_fig.add_trace(go.Scatter(x=epochs, y=train_loss_graph, name="Train Loss", line=dict(color="red")))
     loss_fig.add_trace(go.Scatter(x=epochs, y=test_loss_graph, name="Test Loss", line=dict(color="blue")))
     loss_fig.update_layout(title="Loss over Epochs", xaxis_title="Epoch", yaxis_title="Loss", autosize= True, height=800)
-    loss_fig.write_html(str(METRICS_PATH))
+    loss_fig.write_html(str(METRICS_PATH / "loss_metrics.html"))
 
     print("Saved accuracy_metrics.html and loss_metrics.html")
