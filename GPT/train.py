@@ -182,6 +182,7 @@ if __name__ == "__main__":
         best_accuracy = max(test_accuracy_graph) if test_accuracy_graph else float('-inf')
         if eval_accuracy > best_accuracy:
             torch.save(Nova.state_dict(), MODEL_SAVE_PATH)
+            print(f"saved at epoch {epoch+1}")
             
         metrics_history["train_loss"].append(train_loss)
         metrics_history["train_accuracy"].append(train_accuracy)
@@ -197,12 +198,12 @@ if __name__ == "__main__":
     acc_fig.add_trace(go.Scatter(x=epochs, y=train_accuracy_graph, name="Train Accuracy", line=dict(color="orange")))
     acc_fig.add_trace(go.Scatter(x=epochs, y=test_accuracy_graph, name="Test Accuracy", line=dict(color="green")))
     acc_fig.update_layout(title="Accuracy over Epochs", xaxis_title="Epoch", yaxis_title="Accuracy", autosize= True, height=800)
-    acc_fig.write_html(str(ROOT / "accuracy_metrics.html"))
+    acc_fig.write_html(str(METRICS_PATH))
 
     loss_fig = go.Figure()
-    loss_fig.add_trace(go.Scatter(x=epochs, y=train_loss_graph, name="Train Loss", line=dict(color="blue")))
-    loss_fig.add_trace(go.Scatter(x=epochs, y=test_loss_graph, name="Test Loss", line=dict(color="red")))
+    loss_fig.add_trace(go.Scatter(x=epochs, y=train_loss_graph, name="Train Loss", line=dict(color="red")))
+    loss_fig.add_trace(go.Scatter(x=epochs, y=test_loss_graph, name="Test Loss", line=dict(color="blue")))
     loss_fig.update_layout(title="Loss over Epochs", xaxis_title="Epoch", yaxis_title="Loss", autosize= True, height=800)
-    loss_fig.write_html(str(ROOT / "loss_metrics.html"))
+    loss_fig.write_html(str(METRICS_PATH))
 
     print("Saved accuracy_metrics.html and loss_metrics.html")
