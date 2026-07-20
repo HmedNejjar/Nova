@@ -5,7 +5,7 @@ sys.path.insert(1, str(ROOT))
 
 import torch
 from torch import nn, Tensor
-from decoder import Decoder
+from .decoder import Decoder
 from Preprocess.tokenizer import BPE
 
 class NovaLM(nn.Module):
