@@ -169,17 +169,14 @@ if __name__ == "__main__":
     optimizer = AdamW(Nova.parameters(), lr = LR, weight_decay= 1e-6)
     
     metrics_history = load_metrics_history()
-    
-    train_accuracy_graph, train_loss_graph = [], []
-    test_accuracy_graph, test_loss_graph = [], []
-    
+
     for epoch in range(EPOCHS):
         train_loss, train_accuracy, eval_loss, eval_accuracy = train(Nova, optimizer, loss_fn, scaler, (vocab_train_dl, vocab_test_dl), epoch)
         
         print(f"Train loss: {train_loss:.3f} || Train Accuracy: {train_accuracy:.3f}")
         print(f"Eval loss: {eval_loss:.3f} || Eval Accuracy: {eval_accuracy:.3f}")
         
-        best_accuracy = max(test_accuracy_graph) if test_accuracy_graph else float('-inf')
+        best_accuracy = max(metrics_history["test_accuracy"]) if metrics_history["test_accuracy"] else float('-inf')
         if eval_accuracy > best_accuracy:
             torch.save(Nova.state_dict(), MODEL_SAVE_PATH)
             print(f"saved at epoch {epoch+1}")
@@ -189,20 +186,21 @@ if __name__ == "__main__":
         metrics_history["test_loss"].append(eval_loss)
         metrics_history["test_accuracy"].append(eval_accuracy)
 
+        save_metrics_history(metrics_history)
         
     # ---- Plot the loss and accuracy graphs ----
         
     epochs = list(range(1, len(metrics_history["train_loss"]) + 1))  # derived from actual data, not config EPOCHS
 
     acc_fig = go.Figure()
-    acc_fig.add_trace(go.Scatter(x=epochs, y=train_accuracy_graph, name="Train Accuracy", line=dict(color="orange")))
-    acc_fig.add_trace(go.Scatter(x=epochs, y=test_accuracy_graph, name="Test Accuracy", line=dict(color="green")))
+    acc_fig.add_trace(go.Scatter(x=epochs, y=metrics_history["train_accuracy"], name="Train Accuracy", line=dict(color="orange")))
+    acc_fig.add_trace(go.Scatter(x=epochs, y=metrics_history["test_accuracy"], name="Test Accuracy", line=dict(color="green")))
     acc_fig.update_layout(title="Accuracy over Epochs", xaxis_title="Epoch", yaxis_title="Accuracy", autosize= True, height=800)
     acc_fig.write_html(str(METRICS_PATH / "accuracy_metrics.html"))
 
     loss_fig = go.Figure()
-    loss_fig.add_trace(go.Scatter(x=epochs, y=train_loss_graph, name="Train Loss", line=dict(color="red")))
-    loss_fig.add_trace(go.Scatter(x=epochs, y=test_loss_graph, name="Test Loss", line=dict(color="blue")))
+    loss_fig.add_trace(go.Scatter(x=epochs, y=metrics_history["train_loss"], name="Train Loss", line=dict(color="red")))
+    loss_fig.add_trace(go.Scatter(x=epochs, y=metrics_history["test_loss"], name="Test Loss", line=dict(color="blue")))
     loss_fig.update_layout(title="Loss over Epochs", xaxis_title="Epoch", yaxis_title="Loss", autosize= True, height=800)
     loss_fig.write_html(str(METRICS_PATH / "loss_metrics.html"))
 
