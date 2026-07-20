@@ -4,6 +4,7 @@ ROOT = Path(__file__).parent.parent
 sys.path.insert(1, str(ROOT))
 
 import yaml
+import json
 import pickle
 import torch
 from torch import Tensor, nn
@@ -24,6 +25,7 @@ model_config = config["Model"]
 train_config = config["Train"]
 tokenizer_config = config["Tokenizer"]
 datasets_config = config["Datasets"]
+metrics_config = config["Metrics"]
 
 VOCAB_SIZE = tokenizer_config["vocab_size"]
 SAVEPATH = tokenizer_config["savepath"]
@@ -39,13 +41,26 @@ STRIDE_COEFF = model_config["stride_coeff"]
 LR = float(model_config["learning_rate"])
 ROPE_BASE = model_config["rope_base"]
 MODEL_SAVE_PATH = ROOT / Path(model_config["savepath"])
+MODEL_SAVE_PATH.parent.mkdir(parents=True, exist_ok=True)
 
 EPOCHS = train_config["epochs"]
 BATCH_SIZE = train_config["batch_size"]
 
+METRICS_PATH = ROOT / Path(metrics_config["savepath"])
+METRICS_PATH.parent.mkdir(parents=True, exist_ok=True)
 
 DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
 print(f"Training on {DEVICE}")
+
+def save_metrics_history(history: dict[str, list]) -> None:
+    with open(METRICS_PATH, 'w') as f:
+        json.dump(history, f, indent=2)
+
+def load_metrics_history() -> dict[str, list]:
+    if METRICS_PATH.exists():
+        with open(METRICS_PATH, 'r') as f:
+            return json.load(f)
+    return {"train_loss": [], "train_accuracy": [], "test_loss": [], "test_accuracy": []}
 
 def compute_accuracy(preds: Tensor, labels: Tensor) -> tuple:
     mask = (labels != -100)
@@ -67,7 +82,7 @@ def evaluate(model: NovaLM, loss_fn: nn.CrossEntropyLoss, test_dl: DataLoader, e
         x, y = x.to(DEVICE), y.to(DEVICE)
         
         with torch.no_grad():
-            logits = model(x)
+            logits, _ = model(x, None)
             loss = loss_fn(logits.view(-1, VOCAB_SIZE), y.view(-1))
 
         preds = logits.argmax(dim=-1)
@@ -100,7 +115,7 @@ def train(model: NovaLM, optimizer: AdamW, loss_fn: nn.CrossEntropyLoss,scaler: 
         optimizer.zero_grad()
         
         with autocast(enabled= (DEVICE == 'cuda')):
-            logits, _ = model(x) # discard the cache, training never uses it
+            logits, _ = model(x, None) # discard the cache, training never uses it
             loss = loss_fn(logits.view(-1, VOCAB_SIZE), y.view(-1))
             
         scaler.scale(loss).backward()
@@ -153,6 +168,8 @@ if __name__ == "__main__":
     scaler = GradScaler()
     optimizer = AdamW(Nova.parameters(), lr = LR, weight_decay= 1e-6)
     
+    metrics_history = load_metrics_history()
+    
     train_accuracy_graph, train_loss_graph = [], []
     test_accuracy_graph, test_loss_graph = [], []
     
@@ -166,16 +183,15 @@ if __name__ == "__main__":
         if eval_accuracy > best_accuracy:
             torch.save(Nova.state_dict(), MODEL_SAVE_PATH)
             
-        train_accuracy_graph.append(train_accuracy)
-        train_loss_graph.append(train_loss)
-        
-        test_accuracy_graph.append(eval_accuracy)
-        test_loss_graph.append(eval_loss)
-        
+        metrics_history["train_loss"].append(train_loss)
+        metrics_history["train_accuracy"].append(train_accuracy)
+        metrics_history["test_loss"].append(eval_loss)
+        metrics_history["test_accuracy"].append(eval_accuracy)
+
         
     # ---- Plot the loss and accuracy graphs ----
         
-    epochs = list(range(1, len(train_accuracy_graph) + 1))  # derived from actual data, not config EPOCHS
+    epochs = list(range(1, len(metrics_history["train_loss"]) + 1))  # derived from actual data, not config EPOCHS
 
     acc_fig = go.Figure()
     acc_fig.add_trace(go.Scatter(x=epochs, y=train_accuracy_graph, name="Train Accuracy", line=dict(color="orange")))
@@ -190,5 +206,3 @@ if __name__ == "__main__":
     loss_fig.write_html(str(ROOT / "loss_metrics.html"))
 
     print("Saved accuracy_metrics.html and loss_metrics.html")
-
-
