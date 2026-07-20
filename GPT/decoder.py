@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 from torch import Tensor
-from .attention import BatchedMultiHeadAttention
+from GPT.attention import BatchedMultiHeadAttention
 
 class DecoderBlock(nn.Module):
     def __init__(self, embed_dim: int, num_heads: int, max_seq_len: int, rope_base: int) -> None:
