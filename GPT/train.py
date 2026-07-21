@@ -40,6 +40,7 @@ MAX_SEQ_LEN = model_config["max_seq_len"]
 STRIDE_COEFF = model_config["stride_coeff"]
 LR = float(model_config["learning_rate"])
 ROPE_BASE = model_config["rope_base"]
+DROPOUT = float(model_config["dropout"])
 MODEL_SAVE_PATH = ROOT / Path(model_config["savepath"])
 MODEL_SAVE_PATH.parent.mkdir(parents=True, exist_ok=True)
 
@@ -142,7 +143,7 @@ def train(model: NovaLM, optimizer: AdamW, loss_fn: nn.CrossEntropyLoss,scaler: 
 
 
 if __name__ == "__main__":
-    Nova = NovaLM(vocab_size= VOCAB_SIZE, embed_dim= EMBED_DIM, num_layers= NUM_LAYERS, num_heads= NUM_HEADS, max_seq_len= MAX_SEQ_LEN, rope_base= ROPE_BASE).to(DEVICE)
+    Nova = NovaLM(vocab_size= VOCAB_SIZE, embed_dim= EMBED_DIM, num_layers= NUM_LAYERS, num_heads= NUM_HEADS, max_seq_len= MAX_SEQ_LEN, rope_base= ROPE_BASE, dropout= DROPOUT).to(DEVICE)
     bpe_tokenizer = BPE(vocab_size= VOCAB_SIZE, savepath= SAVEPATH)
     
     if MODEL_SAVE_PATH.exists():

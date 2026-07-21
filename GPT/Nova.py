@@ -9,14 +9,14 @@ from GPT.decoder import Decoder
 from Preprocess.tokenizer import BPE
 
 class NovaLM(nn.Module):
-    def __init__(self, vocab_size: int, embed_dim: int, num_layers: int, num_heads: int, max_seq_len: int, rope_base: int) -> None:
+    def __init__(self, vocab_size: int, embed_dim: int, num_layers: int, num_heads: int, max_seq_len: int, rope_base: int, dropout: float) -> None:
         super().__init__()
         self.embed_dim = embed_dim
         self.max_seq_len = max_seq_len
         
         # integer token IDs -> dense vectors
         self.token_embedding = nn.Embedding(vocab_size, embed_dim)
-        self.decoder = Decoder(embed_dim, num_layers, num_heads, max_seq_len, rope_base)
+        self.decoder = Decoder(embed_dim, num_layers, num_heads, max_seq_len, rope_base, dropout)
         
         # pre-final-projection norm
         self.final_norm = nn.LayerNorm(embed_dim)

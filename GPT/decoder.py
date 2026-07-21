@@ -4,12 +4,13 @@ from torch import Tensor
 from GPT.attention import BatchedMultiHeadAttention
 
 class DecoderBlock(nn.Module):
-    def __init__(self, embed_dim: int, num_heads: int, max_seq_len: int, rope_base: int) -> None:
+    def __init__(self, embed_dim: int, num_heads: int, max_seq_len: int, rope_base: int, dropout: float) -> None:
         super().__init__()
         
         self.embed_dim = embed_dim
         self.num_heads = num_heads
         self.max_seq_len = max_seq_len
+        self.dropout = nn.Dropout(p=dropout)
         
         hidden_dim = int(2 * (4 * embed_dim) / 3)
         
@@ -32,8 +33,8 @@ class DecoderBlock(nn.Module):
         # 2. Apply Multi-Head Attention
         attn_out, new_cache = self.MultiHeadAttention(X_norm, cache)
         
-        # 3. Add residual connection
-        X = X + attn_out
+        # 3. Add residual connection with dropout
+        X = X + self.dropout(attn_out)
         
         # 4. Normalize again
         X_norm = self.norm2(X)
@@ -41,8 +42,8 @@ class DecoderBlock(nn.Module):
         # 5. Apply FFN
         ffn_out = self.FFN_SwiGLU(X_norm)
         
-        # 6. Add residual connection
-        X = X + ffn_out
+        # 6. Add residual connection with dropout
+        X = X + self.dropout(ffn_out)
         
         return (X, new_cache)
     
@@ -64,12 +65,12 @@ class DecoderBlock(nn.Module):
         return self.linear2(swiglu)
 
 class Decoder(nn.Module):
-    def __init__(self, embed_dim: int, num_layers: int, num_heads: int, max_seq_len: int, rope_base: int) -> None:
+    def __init__(self, embed_dim: int, num_layers: int, num_heads: int, max_seq_len: int, rope_base: int, dropout: float) -> None:
         super().__init__()
         
         self.num_layers = num_layers
         
-        self.blocks = nn.ModuleList(DecoderBlock(embed_dim= embed_dim, num_heads= num_heads, max_seq_len= max_seq_len, rope_base= rope_base)
+        self.blocks = nn.ModuleList(DecoderBlock(embed_dim= embed_dim, num_heads= num_heads, max_seq_len= max_seq_len, rope_base= rope_base, dropout= dropout)
                                     for _ in range(num_layers))
         
     def forward(self, X: Tensor, cache_list: list[dict] | None) -> tuple[Tensor, list[dict]]:
