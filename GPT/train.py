@@ -53,12 +53,12 @@ DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
 print(f"Training on {DEVICE}")
 
 def save_metrics_history(history: dict[str, list]) -> None:
-    with open(METRICS_PATH, 'w') as f:
+    with open(METRICS_PATH / Path("Metrics.json"), 'w') as f:
         json.dump(history, f, indent=2)
 
 def load_metrics_history() -> dict[str, list]:
     if METRICS_PATH.exists():
-        with open(METRICS_PATH, 'r') as f:
+        with open(METRICS_PATH / Path("Metrics.json"), 'r') as f:
             return json.load(f)
     return {"train_loss": [], "train_accuracy": [], "test_loss": [], "test_accuracy": []}
 
