@@ -30,8 +30,11 @@ metrics_config = config["Metrics"]
 VOCAB_SIZE = tokenizer_config["vocab_size"]
 SAVEPATH = tokenizer_config["savepath"]
 
-VOCAB_TRAIN = ROOT / Path(datasets_config["SimpleStories_train"])
-VOCAB_TEST = ROOT / Path(datasets_config["SimpleStories_test"])
+VOCAB_TRAIN = ROOT / Path(datasets_config["Mixed_knowledge_train"])
+VOCAB_TEST = ROOT / Path(datasets_config["Mixed_knowledge_test"])
+
+CONVO_TRAIN = ROOT / Path(datasets_config["Oasst1_train"])
+CONVO_TEST = ROOT / Path(datasets_config["Oasst1_test"])
 
 NUM_LAYERS = model_config["num_layers"]
 EMBED_DIM = model_config["embed_dim"]
@@ -155,13 +158,23 @@ if __name__ == "__main__":
 
     with open(VOCAB_TEST, 'rb') as f:
         tokenized_vocab_test = pickle.load(f)
+        
+    with open(CONVO_TRAIN, 'rb') as f:
+        convo_train = pickle.load(f)
+    
+    with open(CONVO_TEST, 'rb') as f:
+        convo_test = pickle.load(f)
 
     vocab_train_ds = VocabDataset(tokenized_ds= tokenized_vocab_train, seq_len= MAX_SEQ_LEN, stride_coeff= STRIDE_COEFF)
     vocab_test_ds = VocabDataset(tokenized_ds= tokenized_vocab_test, seq_len= MAX_SEQ_LEN, stride_coeff= STRIDE_COEFF)
+    convo_train_ds = ChatBotDataset(conversations=convo_train, tokenizer= bpe_tokenizer, seq_len= MAX_SEQ_LEN)
+    convo_test_ds = ChatBotDataset(conversations= convo_test, tokenizer=bpe_tokenizer, seq_len= MAX_SEQ_LEN)
 
 
-    vocab_train_dl = DataLoader(vocab_train_ds, batch_size= BATCH_SIZE, num_workers= 4)
+    vocab_train_dl = DataLoader(vocab_train_ds, batch_size= BATCH_SIZE, num_workers= 4, shuffle= True)
     vocab_test_dl = DataLoader(vocab_test_ds, batch_size=BATCH_SIZE, num_workers= 4)
+    convo_train_dl = DataLoader(convo_train_ds, batch_size= BATCH_SIZE, num_workers= 4)
+    convo_test_dl = DataLoader(convo_test_ds, batch_size= BATCH_SIZE, num_workers= 4)
 
     print(f"Train batches: {len(vocab_train_dl)} | Test batches: {len(vocab_test_dl)}")
 

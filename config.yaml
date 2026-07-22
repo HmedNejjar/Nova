@@ -11,7 +11,9 @@ Model:
     num_layers: 6
     stride_coeff: 2
     learning_rate : 1e-4
+    dropout: 0.1
     rope_base: 10_000
+    savepath: "Model\\Nova_best_model.pth"
 
 Train:
     epochs: 10
@@ -19,4 +21,13 @@ Train:
 
 Datasets:
     SimpleStories_train : "Preprocess\\Datasets\\Vocab_train.pkl"
-    SimpleStories_test : Preprocess\\Datasets\\Vocab_test.pkl
+    SimpleStories_test : "Preprocess\\Datasets\\Vocab_test.pkl"
+
+    Mixed_knowledge_train : "Preprocess\\Datasets\\Mixed_knowledge_train.pkl"
+    Mixed_knowledge_test : "Preprocess\\Datasets\\Mixed_knowledge_test.pkl"
+
+    Oasst1_train: "Preprocess\\Datasets\\oasst1_conversations_train.pkl"
+    Oasst1_test: "Preprocess\\Datasets\\oasst1_conversations_test.pkl"
+
+Metrics:
+    savepath: "Model\\Metrics"
