@@ -33,8 +33,8 @@ SAVEPATH = tokenizer_config["savepath"]
 VOCAB_TRAIN = ROOT / Path(datasets_config["Mixed_knowledge_train"])
 VOCAB_TEST = ROOT / Path(datasets_config["Mixed_knowledge_test"])
 
-CONVO_TRAIN = ROOT / Path(datasets_config["Oasst1_train"])
-CONVO_TEST = ROOT / Path(datasets_config["Oasst1_test"])
+CONVO_TRAIN = ROOT / Path(datasets_config["UltraChat_train"])
+CONVO_TEST = ROOT / Path(datasets_config["UltraChat_test"])
 
 NUM_LAYERS = model_config["num_layers"]
 EMBED_DIM = model_config["embed_dim"]
@@ -51,7 +51,7 @@ EPOCHS = train_config["epochs"]
 BATCH_SIZE = train_config["batch_size"]
 
 METRICS_PATH = ROOT / Path(metrics_config["savepath"])
-METRICS_PATH.parent.mkdir(parents=True, exist_ok=True)
+METRICS_PATH.mkdir(parents=True, exist_ok=True)
 
 DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
 print(f"Training on {DEVICE}")
@@ -80,7 +80,7 @@ def evaluate(model: NovaLM, loss_fn: nn.CrossEntropyLoss, test_dl: DataLoader, e
     total_tokens = 0.0
     num_batches = 0
 
-    pbar = tqdm(test_dl, desc=f"Eval Epoch {epoch}/{EPOCHS}")
+    pbar = tqdm(test_dl, desc=f"Eval Epoch {epoch + 1}/{EPOCHS}")
     
     for x, y in pbar:
         x, y = x.to(DEVICE), y.to(DEVICE)
@@ -115,7 +115,7 @@ def train(model: NovaLM, optimizer: AdamW, loss_fn: nn.CrossEntropyLoss,scaler: 
 
     for x, y in pbar:
         x, y = x.to(DEVICE), y.to(DEVICE)
-        
+                
         optimizer.zero_grad()
         
         with autocast(enabled= (DEVICE == 'cuda')):
@@ -167,8 +167,8 @@ if __name__ == "__main__":
 
     vocab_train_ds = VocabDataset(tokenized_ds= tokenized_vocab_train, seq_len= MAX_SEQ_LEN, stride_coeff= STRIDE_COEFF)
     vocab_test_ds = VocabDataset(tokenized_ds= tokenized_vocab_test, seq_len= MAX_SEQ_LEN, stride_coeff= STRIDE_COEFF)
-    convo_train_ds = ChatBotDataset(conversations=convo_train, tokenizer= bpe_tokenizer, seq_len= MAX_SEQ_LEN)
-    convo_test_ds = ChatBotDataset(conversations= convo_test, tokenizer=bpe_tokenizer, seq_len= MAX_SEQ_LEN)
+    convo_train_ds = ChatBotDataset(conversations= convo_train, tokenizer= bpe_tokenizer, seq_len= MAX_SEQ_LEN, stride_coeff= STRIDE_COEFF)
+    convo_test_ds = ChatBotDataset(conversations= convo_test, tokenizer=bpe_tokenizer, seq_len= MAX_SEQ_LEN, stride_coeff= STRIDE_COEFF)
 
 
     vocab_train_dl = DataLoader(vocab_train_ds, batch_size= BATCH_SIZE, num_workers= 4, shuffle= True)
@@ -185,7 +185,7 @@ if __name__ == "__main__":
     metrics_history = load_metrics_history()
 
     for epoch in range(EPOCHS):
-        train_loss, train_accuracy, eval_loss, eval_accuracy = train(Nova, optimizer, loss_fn, scaler, (vocab_train_dl, vocab_test_dl), epoch)
+        train_loss, train_accuracy, eval_loss, eval_accuracy = train(Nova, optimizer, loss_fn, scaler, (convo_train_dl, convo_test_dl), epoch)
         
         print(f"Train loss: {train_loss:.3f} || Train Accuracy: {train_accuracy:.3f}")
         print(f"Eval loss: {eval_loss:.3f} || Eval Accuracy: {eval_accuracy:.3f}")
