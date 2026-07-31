@@ -9,11 +9,11 @@ from GPT.decoder import Decoder
 from Preprocess.tokenizer import BPE
 
 class NovaLM(nn.Module):
-    def __init__(self, vocab_size: int, embed_dim: int, num_layers: int, num_heads: int, max_seq_len: int, rope_base: int, dropout: float) -> None:
+    def __init__(self, tokenizer: BPE, vocab_size: int, embed_dim: int, num_layers: int, num_heads: int, max_seq_len: int, rope_base: int, dropout: float) -> None:
         super().__init__()
         self.embed_dim = embed_dim
         self.max_seq_len = max_seq_len
-        
+        self.tokenizer = tokenizer
         # integer token IDs -> dense vectors
         self.token_embedding = nn.Embedding(vocab_size, embed_dim)
         self.decoder = Decoder(embed_dim, num_layers, num_heads, max_seq_len, rope_base, dropout)
@@ -38,24 +38,26 @@ class NovaLM(nn.Module):
         return (logits, new_cache_list)
     
     @torch.no_grad()
-    def generate(self, tokenizer: BPE, prompt: str, max_new_tokens: int, device: str) -> str:
+    def generate(self, prompt: str, temperature: float, top_k: int, max_new_tokens: int, device: str) -> str:
         """
-        Generate text given a prompt using greedy decoding.
+        Generate text given a prompt using temperature-scaled sampling and optional top-k filtering.
         Args:
-            tokenizer: BPE tokenizer instance
-            prompt: Input string prompt
-            max_new_tokens: Maximum number of new tokens to generate
+            prompt: Input string prompt.
+            temperature: Temperature for scaling logits before sampling.
+            top_k: Number of highest-probability tokens to keep before sampling.
+            max_new_tokens: Maximum number of new tokens to generate.
+            device: Device to run inference on (e.g. 'cpu' or 'cuda').
         Returns:
-            Generated text as a string
+            Generated text as a string.
         """
         self.eval()
         
         # Encode the prompt
-        input_ids = torch.tensor(tokenizer.encode(prompt)).unsqueeze(0).to(device)
+        input_ids = torch.tensor(self.tokenizer.encode(prompt)).unsqueeze(0).to(device)
         
         cache_list = None
         generated_ids = input_ids
-        EOS_ID = tokenizer.vocab["<eos>"]
+        EOS_ID = self.tokenizer.vocab["<eos>"]
         
         # First pass — getting full cache list and first logits
         logits, cache_list = self.forward(generated_ids, cache_list)
@@ -65,9 +67,22 @@ class NovaLM(nn.Module):
             if generated_ids.shape[1] >= self.max_seq_len:
                 break
             
-            # Get the next token
-            next_token_logits = logits[:, -1, :]
-            next_token = next_token_logits.argmax(dim= -1, keepdim= True)
+            # Get the next token scaled by temperature
+            next_token_logits = logits[:, -1, :] / temperature
+            
+            if top_k > 0:
+                # Keep only the top_k highest logits and set all others to -inf.
+                # This implements top-k sampling by restricting the candidate tokens.
+                top_k_values, top_k_indices = torch.topk(next_token_logits, top_k, dim= -1)
+                filtered_logits = torch.full_like(next_token_logits, float('-inf'))
+                filtered_logits.scatter_(1, top_k_indices, top_k_values)
+                
+                # Use the filtered logits for the next sampling step.
+                next_token_logits = filtered_logits
+            
+            # Convert logits to probabilities and sample one next token.
+            probs = torch.softmax(next_token_logits, dim= -1)
+            next_token = torch.multinomial(probs, num_samples= 1)
             
             generated_ids = torch.cat([generated_ids, next_token], dim= 1)
             
@@ -79,5 +94,36 @@ class NovaLM(nn.Module):
             logits, cache_list = self.forward(next_token, cache_list)
         
         # Decode the generated token IDs back to text
-        generated_text = tokenizer.decode(generated_ids.squeeze(0).tolist())
+        generated_text = self.tokenizer.decode(generated_ids.squeeze(0).tolist())
         return generated_text
+    
+    @torch.no_grad()
+    def chat(self, prompt: str, temperature: float, top_k: int, max_new_tokens: int, device: str) -> str:
+        prompt = "<bos> <|user|> " + prompt + " <|assistant|> "
+        output = self.generate(prompt, temperature, top_k, max_new_tokens, device)
+
+        # Remove special tokens and trim whitespace.
+        output = output.replace("<bos>", "").replace("<eos>", "").strip()
+
+        user_text = ""
+        assistant_text = ""
+
+        if "<|assistant|>" in output:
+            user_segment, assistant_segment = output.split("<|assistant|>", 1)
+            if "<|user|>" in user_segment:
+                user_text = user_segment.split("<|user|>", 1)[1].strip()
+            else:
+                user_text = user_segment.strip()
+            assistant_text = assistant_segment.strip()
+        elif "<|user|>" in output:
+            user_text = output.split("<|user|>", 1)[1].strip()
+        else:
+            assistant_text = output
+
+        if user_text and assistant_text:
+            return f"User: {user_text}\nAssistant: {assistant_text}"
+        if assistant_text:
+            return f"Assistant: {assistant_text}"
+        if user_text:
+            return f"User: {user_text}"
+        return output
