@@ -15,6 +15,9 @@ Model:
     rope_base: 10_000
     savepath: "Model\\Nova_best_model.pth"
 
+    top_k : 10
+    temperature : 0.2
+
 Train:
     epochs: 10
     batch_size: 8
