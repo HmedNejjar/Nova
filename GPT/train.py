@@ -51,7 +51,7 @@ EPOCHS = train_config["epochs"]
 BATCH_SIZE = train_config["batch_size"]
 
 METRICS_PATH = ROOT / Path(metrics_config["savepath"])
-METRICS_PATH.mkdir(parents=True, exist_ok=True)
+METRICS_PATH.parent.mkdir(parents=True, exist_ok=True)
 
 DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
 print(f"Training on {DEVICE}")
@@ -61,7 +61,7 @@ def save_metrics_history(history: dict[str, list]) -> None:
         json.dump(history, f, indent=2)
 
 def load_metrics_history() -> dict[str, list]:
-    if METRICS_PATH.exists():
+    if (METRICS_PATH / Path("Metrics.json")).exists():
         with open(METRICS_PATH / Path("Metrics.json"), 'r') as f:
             return json.load(f)
     return {"train_loss": [], "train_accuracy": [], "test_loss": [], "test_accuracy": []}
@@ -81,13 +81,24 @@ def evaluate(model: NovaLM, loss_fn: nn.CrossEntropyLoss, test_dl: DataLoader, e
     num_batches = 0
 
     pbar = tqdm(test_dl, desc=f"Eval Epoch {epoch + 1}/{EPOCHS}")
+    skipped_batches = 0
     
     for x, y in pbar:
         x, y = x.to(DEVICE), y.to(DEVICE)
         
+        mask = (y != -100)
+        if mask.sum().item() == 0:
+            skipped_batches += 1
+            continue
+        
         with torch.no_grad():
             logits, _ = model(x, None)
             loss = loss_fn(logits.view(-1, VOCAB_SIZE), y.view(-1))
+            
+            if torch.isnan(loss) or torch.isinf(loss):
+                skipped_batches += 1
+                print(f"\n!!! BAD LOSS at batch {num_batches}: {loss.item()} !!!")
+                continue
 
         preds = logits.argmax(dim=-1)
         correct, total = compute_accuracy(preds, y)
@@ -98,12 +109,13 @@ def evaluate(model: NovaLM, loss_fn: nn.CrossEntropyLoss, test_dl: DataLoader, e
         num_batches += 1
 
         pbar.set_postfix(loss=loss.item())
-
+    print(f"Skipped {skipped_batches} fully-masked batches this epoch")
+    
     eval_loss = total_loss / num_batches if num_batches else 0.0
     eval_accuracy = total_correct / total_tokens if total_tokens else 0.0
     return eval_loss, eval_accuracy
 
-def train(model: NovaLM, optimizer: AdamW, loss_fn: nn.CrossEntropyLoss,scaler: GradScaler , dataloaders: tuple[DataLoader, DataLoader], epoch: int) -> tuple:
+def train(model: NovaLM, optimizer: AdamW, loss_fn: nn.CrossEntropyLoss, scaler: GradScaler, dataloaders: tuple[DataLoader, DataLoader], epoch: int) -> tuple:
     model.train()
     train_dl, test_dl = dataloaders
     total_loss = 0.0
@@ -112,15 +124,25 @@ def train(model: NovaLM, optimizer: AdamW, loss_fn: nn.CrossEntropyLoss,scaler: 
     num_batches = 0
 
     pbar = tqdm(train_dl, desc=f"Training Epoch {epoch + 1}/{EPOCHS}")
-
+    skipped_batches = 0
     for x, y in pbar:
         x, y = x.to(DEVICE), y.to(DEVICE)
-                
+        
+        mask = (y != -100)
+        if mask.sum().item() == 0:
+            skipped_batches += 1
+            continue      
+     
         optimizer.zero_grad()
         
         with autocast(enabled= (DEVICE == 'cuda')):
-            logits, _ = model(x, None) # discard the cache, training never uses it
+            logits, _ = model(x, None)
             loss = loss_fn(logits.view(-1, VOCAB_SIZE), y.view(-1))
+            
+            if torch.isnan(loss) or torch.isinf(loss):
+                print(f"\n!!! BAD LOSS at batch {num_batches}: {loss.item()} !!!")
+                skipped_batches += 1
+                continue
             
         scaler.scale(loss).backward()
         scaler.step(optimizer)
@@ -135,6 +157,8 @@ def train(model: NovaLM, optimizer: AdamW, loss_fn: nn.CrossEntropyLoss,scaler: 
         num_batches += 1
 
         pbar.set_postfix(loss=loss.item())
+    
+    print(f"Skipped {skipped_batches} fully-masked batches this epoch")
 
     train_loss = total_loss / num_batches if num_batches else 0.0
     train_accuracy = total_correct / total_tokens if total_tokens else 0.0
@@ -144,10 +168,9 @@ def train(model: NovaLM, optimizer: AdamW, loss_fn: nn.CrossEntropyLoss,scaler: 
     return train_loss, train_accuracy, eval_loss, eval_accuracy
 
 
-
 if __name__ == "__main__":
-    Nova = NovaLM(vocab_size= VOCAB_SIZE, embed_dim= EMBED_DIM, num_layers= NUM_LAYERS, num_heads= NUM_HEADS, max_seq_len= MAX_SEQ_LEN, rope_base= ROPE_BASE, dropout= DROPOUT).to(DEVICE)
-    bpe_tokenizer = BPE(vocab_size= VOCAB_SIZE, savepath= SAVEPATH)
+    bpe_tokenizer = BPE(vocab_size=VOCAB_SIZE, savepath=SAVEPATH)
+    Nova = NovaLM(tokenizer= bpe_tokenizer, vocab_size= VOCAB_SIZE, embed_dim= EMBED_DIM, num_layers= NUM_LAYERS, num_heads= NUM_HEADS, max_seq_len= MAX_SEQ_LEN, rope_base= ROPE_BASE, dropout= DROPOUT).to(DEVICE)
     
     if MODEL_SAVE_PATH.exists():
         print(f"Loading model from {MODEL_SAVE_PATH}")
@@ -165,22 +188,21 @@ if __name__ == "__main__":
     with open(CONVO_TEST, 'rb') as f:
         convo_test = pickle.load(f)
 
-    vocab_train_ds = VocabDataset(tokenized_ds= tokenized_vocab_train, seq_len= MAX_SEQ_LEN, stride_coeff= STRIDE_COEFF)
-    vocab_test_ds = VocabDataset(tokenized_ds= tokenized_vocab_test, seq_len= MAX_SEQ_LEN, stride_coeff= STRIDE_COEFF)
+    vocab_train_ds = VocabDataset(tokenized_ds=tokenized_vocab_train, seq_len=MAX_SEQ_LEN, stride_coeff=STRIDE_COEFF)
+    vocab_test_ds = VocabDataset(tokenized_ds=tokenized_vocab_test, seq_len=MAX_SEQ_LEN, stride_coeff=STRIDE_COEFF)
     convo_train_ds = ChatBotDataset(conversations= convo_train, tokenizer= bpe_tokenizer, seq_len= MAX_SEQ_LEN, stride_coeff= STRIDE_COEFF)
     convo_test_ds = ChatBotDataset(conversations= convo_test, tokenizer=bpe_tokenizer, seq_len= MAX_SEQ_LEN, stride_coeff= STRIDE_COEFF)
 
+    vocab_train_dl = DataLoader(vocab_train_ds, batch_size=BATCH_SIZE, num_workers=4, shuffle=True)
+    vocab_test_dl = DataLoader(vocab_test_ds, batch_size=BATCH_SIZE, num_workers=4)
+    convo_train_dl = DataLoader(convo_train_ds, batch_size=BATCH_SIZE, num_workers=4)
+    convo_test_dl = DataLoader(convo_test_ds, batch_size=BATCH_SIZE, num_workers=4)
 
-    vocab_train_dl = DataLoader(vocab_train_ds, batch_size= BATCH_SIZE, num_workers= 4, shuffle= True)
-    vocab_test_dl = DataLoader(vocab_test_ds, batch_size=BATCH_SIZE, num_workers= 4)
-    convo_train_dl = DataLoader(convo_train_ds, batch_size= BATCH_SIZE, num_workers= 4)
-    convo_test_dl = DataLoader(convo_test_ds, batch_size= BATCH_SIZE, num_workers= 4)
+    print(f"Train batches: {len(convo_train_dl)} | Test batches: {len(convo_test_dl)}")
 
-    print(f"Train batches: {len(vocab_train_dl)} | Test batches: {len(vocab_test_dl)}")
-
-    loss_fn = nn.CrossEntropyLoss(ignore_index= -100)
+    loss_fn = nn.CrossEntropyLoss(ignore_index=-100)
     scaler = GradScaler()
-    optimizer = AdamW(Nova.parameters(), lr = LR, weight_decay= 1e-6)
+    optimizer = AdamW(Nova.parameters(), lr=LR, weight_decay=1e-6)
     
     metrics_history = load_metrics_history()
 
@@ -193,29 +215,27 @@ if __name__ == "__main__":
         best_accuracy = max(metrics_history["test_accuracy"]) if metrics_history["test_accuracy"] else float('-inf')
         if eval_accuracy > best_accuracy:
             torch.save(Nova.state_dict(), MODEL_SAVE_PATH)
-            print(f"saved at epoch {epoch+1}")
+            print(f"Saved model at epoch {epoch + 1}")
             
-        metrics_history["train_loss"].append(train_loss)
-        metrics_history["train_accuracy"].append(train_accuracy)
-        metrics_history["test_loss"].append(eval_loss)
-        metrics_history["test_accuracy"].append(eval_accuracy)
+            metrics_history["train_loss"].append(train_loss)
+            metrics_history["train_accuracy"].append(train_accuracy)
+            metrics_history["test_loss"].append(eval_loss)
+            metrics_history["test_accuracy"].append(eval_accuracy)
 
         save_metrics_history(metrics_history)
         
-    # ---- Plot the loss and accuracy graphs ----
-        
-    epochs = list(range(1, len(metrics_history["train_loss"]) + 1))  # derived from actual data, not config EPOCHS
+    epochs = list(range(1, len(metrics_history["train_loss"]) + 1))
 
     acc_fig = go.Figure()
     acc_fig.add_trace(go.Scatter(x=epochs, y=metrics_history["train_accuracy"], name="Train Accuracy", line=dict(color="orange")))
     acc_fig.add_trace(go.Scatter(x=epochs, y=metrics_history["test_accuracy"], name="Test Accuracy", line=dict(color="green")))
-    acc_fig.update_layout(title="Accuracy over Epochs", xaxis_title="Epoch", yaxis_title="Accuracy", autosize= True, height=800)
+    acc_fig.update_layout(title="Accuracy over Epochs", xaxis_title="Epoch", yaxis_title="Accuracy", autosize=True, height=800)
     acc_fig.write_html(str(METRICS_PATH / "accuracy_metrics.html"))
 
     loss_fig = go.Figure()
     loss_fig.add_trace(go.Scatter(x=epochs, y=metrics_history["train_loss"], name="Train Loss", line=dict(color="red")))
     loss_fig.add_trace(go.Scatter(x=epochs, y=metrics_history["test_loss"], name="Test Loss", line=dict(color="blue")))
-    loss_fig.update_layout(title="Loss over Epochs", xaxis_title="Epoch", yaxis_title="Loss", autosize= True, height=800)
+    loss_fig.update_layout(title="Loss over Epochs", xaxis_title="Epoch", yaxis_title="Loss", autosize=True, height=800)
     loss_fig.write_html(str(METRICS_PATH / "loss_metrics.html"))
 
     print("Saved accuracy_metrics.html and loss_metrics.html")
