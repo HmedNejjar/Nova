@@ -40,6 +40,7 @@ class ChatBotDataset(Dataset):
 
         USER_ID = tokenizer.vocab["<|user|>"]
         ASSISTANT_ID = tokenizer.vocab["<|assistant|>"]
+        SYSTEM_ID = tokenizer.vocab["<|system|>"]
 
         all_tokens = []
         all_labels = []
@@ -51,7 +52,7 @@ class ChatBotDataset(Dataset):
             labels = tokens.copy()
             masking = True
             for i, token in enumerate(tokens):
-                if token == USER_ID:
+                if token == USER_ID or token == SYSTEM_ID:
                     masking = True
                 elif token == ASSISTANT_ID:
                     masking = False
