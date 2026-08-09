@@ -3,7 +3,7 @@ from pathlib import Path
 import yaml
 import json
 
-PARENT_FOLDER = Path(r"G:\\Projects\\Python\\Nova")
+PARENT_FOLDER = Path(__file__).parent.parent
 
 def main():
     # Load the configuration from a YAML file
