@@ -98,32 +98,42 @@ class NovaLM(nn.Module):
         return generated_text
     
     @torch.no_grad()
-    def chat(self, prompt: str, temperature: float, top_k: int, max_new_tokens: int, device: str) -> str:
-        prompt = "<bos> <|user|> " + prompt + " <|assistant|> "
+    def chat(self, messages: list[dict], temperature: float, top_k: int, max_new_tokens: int, device: str) -> str:
+        ROLE_TAGS = {"user": "<|user|>", "assistant": "<|assistant|>", "system": "<|system|>"}
+        max_prompt_len = max(self.max_seq_len - max_new_tokens, 1)
+    
+        # Keep system instructions separate so history can be trimmed first.
+        system_turns, convo_turns = [], []
+        for m in messages:
+            role = m.get("role", "user")
+            tag = ROLE_TAGS.get(role, "<|user|>")
+            encoded = self.tokenizer.encode(f"{tag} {m.get('content', '')} ")
+            (system_turns if role == "system" else convo_turns).append(encoded)
+    
+        assistant_lead_in = self.tokenizer.encode("<|assistant|> ")
+        bos_ids = self.tokenizer.encode("<bos> ")
+    
+        # Reserve space for BOS, system turns, and the assistant marker.
+        budget = max_prompt_len - len(bos_ids) - sum(len(t) for t in system_turns) - len(assistant_lead_in)
+        while convo_turns and sum(len(t) for t in convo_turns) > budget:
+            convo_turns.pop(0)
+    
+        prompt_ids = list(bos_ids)
+        for t in system_turns + convo_turns:
+            prompt_ids.extend(t)
+        prompt_ids.extend(assistant_lead_in)
+    
+        # This is a final guard for oversized system prompts; keep the newest suffix.
+        if len(prompt_ids) > max_prompt_len:
+            prompt_ids = prompt_ids[-max_prompt_len:]
+    
+        prompt = self.tokenizer.decode(prompt_ids)
         output = self.generate(prompt, temperature, top_k, max_new_tokens, device)
-
-        # Remove special tokens and trim whitespace.
-        output = output.replace("<bos>", "").replace("<eos>", "").strip()
-
-        user_text = ""
-        assistant_text = ""
-
-        if "<|assistant|>" in output:
-            user_segment, assistant_segment = output.split("<|assistant|>", 1)
-            if "<|user|>" in user_segment:
-                user_text = user_segment.split("<|user|>", 1)[1].strip()
-            else:
-                user_text = user_segment.strip()
-            assistant_text = assistant_segment.strip()
-        elif "<|user|>" in output:
-            user_text = output.split("<|user|>", 1)[1].strip()
-        else:
-            assistant_text = output
-
-        if user_text and assistant_text:
-            return f"User: {user_text}\nAssistant: {assistant_text}"
-        if assistant_text:
-            return f"Assistant: {assistant_text}"
-        if user_text:
-            return f"User: {user_text}"
-        return output
+    
+        # Return only the assistant's first response, stopping at any new turn marker.
+        assistant_text = output.rsplit("<|assistant|>", 1)[1] if "<|assistant|>" in output else output
+        assistant_text = assistant_text.replace("<bos>", "").replace("<eos>", "")
+        for tag in ("<|user|>", "<|assistant|>", "<|system|>"):
+            if tag in assistant_text:
+                assistant_text = assistant_text.split(tag, 1)[0]
+        return assistant_text.strip()

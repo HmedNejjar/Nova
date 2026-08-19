@@ -177,21 +177,24 @@ class BPE:
         """Decode a list of token IDs back into the original text."""
         # Reverse the vocabulary mapping to get tokens from IDs
         id_to_token = {id_: token for token, id_ in self.vocab.items()}
-        
+        special_tokens = set(self._special_tokens())
         # Convert token IDs back to tokens
-        tokens = [id_to_token.get(id, "<unk>") for id in token_ids]
+        parts = []
+        for id_ in token_ids:
+            token = id_to_token.get(id_, "<unk>")
+            parts.append(f" {token} " if token in special_tokens else token)
         
         # Reconstruct the original text from tokens
-        text = "".join(tokens)
+        text = "".join(parts).replace("</w>", " ")
         
         # Remove the end-of-word markers and split into words
         text = text.replace("</w>", " ").strip()
         
-        return str(text)
+        return " ".join(text.split())
     
     def _special_tokens(self) -> tuple:
         """Return a tuple of special tokens used in the tokenizer."""
-        return ("<pad>", "<unk>", "<bos>", "<eos>", "<|user|>", "<|assistant|>")
+        return ("<pad>", "<unk>", "<bos>", "<eos>", "<|user|>", "<|assistant|>", "<|system|>")
     
 
 if __name__ == "__main__":
