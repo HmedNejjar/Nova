@@ -26,10 +26,10 @@ def main():
     
     # Save the vocabulary and merges to a JSON file
     with open(PARENT_FOLDER / f'{savepath}\\vocab.json', 'w') as f:
-        json.dump(vocab, f, indent=4)
+        json.dump(vocab, f, indent=4, ensure_ascii= False)
     
     with open(PARENT_FOLDER / f'{savepath}\\merges.json', 'w') as f:
-        json.dump(merges, f, indent=4)
+        json.dump(merges, f, indent=4, ensure_ascii= False)
     
 
 if __name__ == "__main__":

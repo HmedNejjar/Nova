@@ -2,24 +2,24 @@ Tokenizer:
     type: "Byte-Pair Encoding"
     savepath: "Preprocess"
     corpus_path: "corpus.txt"
-    vocab_size: 10_000
+    vocab_size: 24_000
 
 Model:
     embed_dim: 768   
-    num_heads: 8     
+    num_heads: 12     
     max_seq_len: 768 
-    num_layers: 6
+    num_layers: 12
     stride_coeff: 2
-    learning_rate : 1e-4
+    learning_rate : 1e-3
     dropout: 0.1
     rope_base: 10_000
-    savepath: "Model\\Nova_best_model.pth"
+    savepath: "Model\\Nova_best_model.safetensors"
 
-    top_k : 10
-    temperature : 0.2
+    top_k : 5
+    temperature : 0.5
 
 Train:
-    epochs: 10
+    epochs: 1
     batch_size: 8
 
 Datasets:
@@ -29,8 +29,8 @@ Datasets:
     Mixed_knowledge_train : "Preprocess\\Datasets\\Mixed_knowledge_train.pkl"
     Mixed_knowledge_test : "Preprocess\\Datasets\\Mixed_knowledge_test.pkl"
 
-    UltraChat_train: "Preprocess\\Datasets\\UltraChat_train.pkl"
-    UltraChat_test: "Preprocess\\Datasets\\UltraChat_test.pkl"
+    Chat_train: "Preprocess\\Datasets\\chat_train.jsonl"
+    Chat_test: "Preprocess\\Datasets\\chat_test.jsonl"
 
 Metrics:
     savepath: "Model\\Metrics"

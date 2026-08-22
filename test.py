@@ -8,6 +8,8 @@ import torch
 from GPT.Nova import NovaLM
 from Preprocess.tokenizer import BPE
 
+from safetensors.torch import save_model, load_model
+
 with open(ROOT / Path(r"config.yaml"), 'r') as f:
     config = yaml.safe_load(f)
     
@@ -30,16 +32,25 @@ TEMP = model_config["temperature"]
 VOCAB_SIZE = tokenizer_config["vocab_size"]
 SAVEPATH = tokenizer_config["savepath"]
 
+MAX_TOKENS = 80
+
 DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 bpe = BPE(vocab_size= VOCAB_SIZE, savepath= SAVEPATH)
+print(f"{bpe.vocab_size} vocab size of length {len(bpe.vocab)}")
 Nova = NovaLM(tokenizer= bpe, vocab_size= VOCAB_SIZE, embed_dim= EMBED_DIM, num_layers= NUM_LAYERS, num_heads= NUM_HEADS, max_seq_len= MAX_SEQ_LEN, rope_base= ROPE_BASE, dropout= DROPOUT).to(DEVICE)
 
 if MODEL_SAVE_PATH.exists():
         print(f"Loading model from {MODEL_SAVE_PATH}")
-        Nova.load_state_dict(torch.load(MODEL_SAVE_PATH, map_location=DEVICE))
+        load_model(Nova, str(MODEL_SAVE_PATH))
 
+print(f"{sum(p.numel() for p in Nova.parameters())} parameters in the model")
 prompt = input("Enter a prompt: ")
 
-output = Nova.chat(prompt, TEMP, TOP_K, 60, DEVICE)
-print(output)
+messages = [{"role": "system", "content": "You are a knowledgeable assistant. Provide accurate, factual answers."},
+            {"role": "user", "content": prompt}]
+
+#output = Nova.chat(messages, TEMP, TOP_K, MAX_TOKENS,DEVICE)
+
+output = Nova.generate(prompt, 0.01, TOP_K, MAX_TOKENS, DEVICE)
+print(f"Nova: {output}")

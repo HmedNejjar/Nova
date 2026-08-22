@@ -11,6 +11,7 @@ from torch import Tensor, nn
 from torch.utils.data import DataLoader
 from torch.optim import AdamW
 from torch.cuda.amp import autocast, GradScaler
+from safetensors.torch import save_model, load_model
 from tqdm import tqdm
 import plotly.graph_objects as go
 
@@ -30,11 +31,11 @@ metrics_config = config["Metrics"]
 VOCAB_SIZE = tokenizer_config["vocab_size"]
 SAVEPATH = tokenizer_config["savepath"]
 
-VOCAB_TRAIN = ROOT / Path(datasets_config["Mixed_knowledge_train"])
-VOCAB_TEST = ROOT / Path(datasets_config["Mixed_knowledge_test"])
+VOCAB_TRAIN = ROOT / Path(datasets_config["SimpleStories_train"])
+VOCAB_TEST = ROOT / Path(datasets_config["SimpleStories_test"])
 
-CONVO_TRAIN = ROOT / Path(datasets_config["UltraChat_train"])
-CONVO_TEST = ROOT / Path(datasets_config["UltraChat_test"])
+CONVO_TRAIN = ROOT / Path(datasets_config["Chat_train"])
+CONVO_TEST = ROOT / Path(datasets_config["Chat_test"])
 
 NUM_LAYERS = model_config["num_layers"]
 EMBED_DIM = model_config["embed_dim"]
@@ -55,6 +56,23 @@ METRICS_PATH.parent.mkdir(parents=True, exist_ok=True)
 
 DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
 print(f"Training on {DEVICE}")
+
+def load_conversations(path: str | Path) -> list[str]:
+    conversations = []
+
+    with open(path, "r", encoding="utf-8") as f:
+        for line in f:
+            if not line.strip():
+                continue
+
+            record = json.loads(line)
+
+            text = record.get("text")
+
+            if text:
+                conversations.append(text)
+
+    return conversations
 
 def save_metrics_history(history: dict[str, list]) -> None:
     with open(METRICS_PATH / Path("Metrics.json"), 'w') as f:
@@ -174,7 +192,7 @@ if __name__ == "__main__":
     
     if MODEL_SAVE_PATH.exists():
         print(f"Loading model from {MODEL_SAVE_PATH}")
-        Nova.load_state_dict(torch.load(MODEL_SAVE_PATH, map_location=DEVICE))
+        load_model(Nova, str(MODEL_SAVE_PATH))
 
     with open(VOCAB_TRAIN, 'rb') as f:
         tokenized_vocab_train = pickle.load(f)
@@ -182,11 +200,9 @@ if __name__ == "__main__":
     with open(VOCAB_TEST, 'rb') as f:
         tokenized_vocab_test = pickle.load(f)
         
-    with open(CONVO_TRAIN, 'rb') as f:
-        convo_train = pickle.load(f)
+    convo_train = load_conversations(CONVO_TRAIN)
     
-    with open(CONVO_TEST, 'rb') as f:
-        convo_test = pickle.load(f)
+    convo_test = load_conversations(CONVO_TEST)
 
     vocab_train_ds = VocabDataset(tokenized_ds=tokenized_vocab_train, seq_len=MAX_SEQ_LEN, stride_coeff=STRIDE_COEFF)
     vocab_test_ds = VocabDataset(tokenized_ds=tokenized_vocab_test, seq_len=MAX_SEQ_LEN, stride_coeff=STRIDE_COEFF)
@@ -214,7 +230,7 @@ if __name__ == "__main__":
         
         best_accuracy = max(metrics_history["test_accuracy"]) if metrics_history["test_accuracy"] else float('-inf')
         if eval_accuracy > best_accuracy:
-            torch.save(Nova.state_dict(), MODEL_SAVE_PATH)
+            save_model(Nova, str(MODEL_SAVE_PATH))
             print(f"Saved model at epoch {epoch + 1}")
             
             metrics_history["train_loss"].append(train_loss)
