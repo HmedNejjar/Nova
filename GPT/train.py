@@ -10,7 +10,8 @@ import torch
 from torch import Tensor, nn
 from torch.utils.data import DataLoader
 from torch.optim import AdamW
-from torch.cuda.amp import autocast, GradScaler
+from torch.nn.utils import clip_grad_norm_
+from torch.cuda.amp import autocast
 from safetensors.torch import save_model, load_model
 from tqdm import tqdm
 import plotly.graph_objects as go
@@ -109,7 +110,7 @@ def evaluate(model: NovaLM, loss_fn: nn.CrossEntropyLoss, test_dl: DataLoader, e
             skipped_batches += 1
             continue
         
-        with torch.no_grad():
+        with torch.no_grad(), autocast(enabled=(DEVICE == 'cuda'), dtype=torch.bfloat16):
             logits, _ = model(x, None)
             loss = loss_fn(logits.view(-1, VOCAB_SIZE), y.view(-1))
             
@@ -133,7 +134,7 @@ def evaluate(model: NovaLM, loss_fn: nn.CrossEntropyLoss, test_dl: DataLoader, e
     eval_accuracy = total_correct / total_tokens if total_tokens else 0.0
     return eval_loss, eval_accuracy
 
-def train(model: NovaLM, optimizer: AdamW, loss_fn: nn.CrossEntropyLoss, scaler: GradScaler, dataloaders: tuple[DataLoader, DataLoader], epoch: int) -> tuple:
+def train(model: NovaLM, optimizer: AdamW, loss_fn: nn.CrossEntropyLoss, dataloaders: tuple[DataLoader, DataLoader], epoch: int) -> tuple:
     model.train()
     train_dl, test_dl = dataloaders
     total_loss = 0.0
@@ -153,7 +154,7 @@ def train(model: NovaLM, optimizer: AdamW, loss_fn: nn.CrossEntropyLoss, scaler:
      
         optimizer.zero_grad()
         
-        with autocast(enabled= (DEVICE == 'cuda')):
+        with autocast(enabled= (DEVICE == 'cuda'), dtype= torch.bfloat16):
             logits, _ = model(x, None)
             loss = loss_fn(logits.view(-1, VOCAB_SIZE), y.view(-1))
             
@@ -162,9 +163,11 @@ def train(model: NovaLM, optimizer: AdamW, loss_fn: nn.CrossEntropyLoss, scaler:
                 skipped_batches += 1
                 continue
             
-        scaler.scale(loss).backward()
-        scaler.step(optimizer)
-        scaler.update()
+        loss.backward()
+
+        clip_grad_norm_(model.parameters(), max_norm=1.0)
+        
+        optimizer.step()
         
         preds = logits.argmax(dim= -1)
         correct, total = compute_accuracy(preds, y)
@@ -217,13 +220,12 @@ if __name__ == "__main__":
     print(f"Train batches: {len(convo_train_dl)} | Test batches: {len(convo_test_dl)}")
 
     loss_fn = nn.CrossEntropyLoss(ignore_index=-100)
-    scaler = GradScaler()
     optimizer = AdamW(Nova.parameters(), lr=LR, weight_decay=1e-6)
     
     metrics_history = load_metrics_history()
 
     for epoch in range(EPOCHS):
-        train_loss, train_accuracy, eval_loss, eval_accuracy = train(Nova, optimizer, loss_fn, scaler, (convo_train_dl, convo_test_dl), epoch)
+        train_loss, train_accuracy, eval_loss, eval_accuracy = train(Nova, optimizer, loss_fn, (convo_train_dl, convo_test_dl), epoch)
         
         print(f"Train loss: {train_loss:.3f} || Train Accuracy: {train_accuracy:.3f}")
         print(f"Eval loss: {eval_loss:.3f} || Eval Accuracy: {eval_accuracy:.3f}")
