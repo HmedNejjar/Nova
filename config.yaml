@@ -7,7 +7,7 @@ Tokenizer:
 Model:
     embed_dim: 768   
     num_heads: 12     
-    max_seq_len: 768 
+    max_seq_len: 1024 
     num_layers: 12
     stride_coeff: 2
     learning_rate : 1e-3

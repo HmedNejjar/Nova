@@ -32,7 +32,7 @@ TEMP = model_config["temperature"]
 VOCAB_SIZE = tokenizer_config["vocab_size"]
 SAVEPATH = tokenizer_config["savepath"]
 
-MAX_TOKENS = 80
+MAX_TOKENS = 200
 
 DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
 
@@ -47,10 +47,10 @@ if MODEL_SAVE_PATH.exists():
 print(f"{sum(p.numel() for p in Nova.parameters())} parameters in the model")
 prompt = input("Enter a prompt: ")
 
-messages = [{"role": "system", "content": "You are a knowledgeable assistant. Provide accurate, factual answers."},
+messages = [{"role": "system", "content": "You are Nova AI, a chatot assistant who provides accurate and short answers."},
             {"role": "user", "content": prompt}]
 
-#output = Nova.chat(messages, TEMP, TOP_K, MAX_TOKENS,DEVICE)
+output = Nova.chat(messages, TEMP, TOP_K, MAX_TOKENS, DEVICE)
 
-output = Nova.generate(prompt, 0.01, TOP_K, MAX_TOKENS, DEVICE)
+#output = Nova.generate(prompt, TEMP, TOP_K, MAX_TOKENS, DEVICE)
 print(f"Nova: {output}")
