@@ -2,7 +2,7 @@
 
 ![Python](https://img.shields.io/badge/python-3.10%2B-blue)
 ![PyTorch](https://img.shields.io/badge/framework-PyTorch-red)
-![Status](https://img.shields.io/badge/status-completed-green)
+![Status](https://img.shields.io/badge/status-in%20development-yellow)
 
 A GPT-style language model built from scratch, with a focus on understanding and implementing the core components behind modern Large Language Models.
 
@@ -24,7 +24,7 @@ The goal is not only to create a chatbot, but to understand the engineering and 
 
 - **Decoder-only Transformer architecture**, implemented from scratch in PyTorch
 - **Custom Byte-Pair Encoding (BPE) tokenizer**, trained directly on a raw text corpus (no external tokenizer libraries)
-- **Multi-head self-attention** with **Rotary Positional Embeddings (RoPE)**, computed from scratch
+- **Multi-head self-attention** with **Rotary Positional Embeddings (RoPE)**
 - **SwiGLU feed-forward network** and pre-norm residual blocks, in the style of modern LLaMA-esque decoders
 - **Weight-tying** between the token embedding and output projection layers
 - **KV-cache optimization** for efficient autoregressive inference, with correctly offset RoPE and causal masking during incremental decoding
@@ -41,7 +41,7 @@ flowchart TD
     A["Input text"] --> B["BPE Tokenizer (encode)"]
     B --> C["Token IDs"]
     C --> D["Token Embedding"]
-    D --> E["Decoder Block x 6"]
+    D --> E["Decoder Block x 12"]
     E --> F["Final LayerNorm"]
     F --> G["LM Head (tied to embedding weights)"]
     G --> H["Logits over the vocabulary"]
@@ -54,7 +54,7 @@ flowchart TD
 
 1. **Tokenize** — the prompt is split into subword pieces by the BPE tokenizer and converted to integer IDs.
 2. **Embed** — each ID is looked up in a learned embedding table and turned into a 768-dim vector.
-3. **Decode** — the vectors pass through 6 stacked decoder blocks (below), which is where almost all of the "thinking" happens.
+3. **Decode** — the vectors pass through 12 stacked decoder blocks (below), which is where almost all of the "thinking" happens.
 4. **Project** — a final LayerNorm and a linear head (weight-tied to the embedding table) turn the last hidden vector into a score for every token in the vocabulary.
 5. **Sample** — logits are scaled by temperature, cut down to the top-k most likely tokens, and one is sampled — that's the next token.
 6. **Repeat** — the new token is fed back in (reusing cached attention keys/values instead of recomputing the whole sequence) until an end-of-sequence token or the length limit is hit, then the ID sequence is decoded back to text.
@@ -79,7 +79,7 @@ flowchart TD
 - **Pre-norm + SwiGLU FFN** — the result is normalized again and passed through a gated feed-forward network: one linear layer produces a "gate," another produces a "value," the gate is passed through SiLU and multiplied elementwise with the value, then projected back down to the embedding size.
 - **Residual add** — same skip-connection pattern, giving the final output of the block.
 
-Six of these blocks are stacked to form the full decoder, and this same architecture is reused unchanged across all three training phases below — only the data and loss masking change.
+Twelve of these blocks are stacked to form the full decoder, and this same architecture is reused unchanged across all three training phases below — only the data and loss masking change.
 
 ## Project Structure
 
@@ -125,13 +125,13 @@ Tokenizer:
     type: "Byte-Pair Encoding"
     savepath: "Preprocess"
     corpus_path: "corpus.txt"
-    vocab_size: 10_000
+    vocab_size: 24_000
 
 Model:
     embed_dim: 768
-    num_heads: 8
+    num_heads: 12
     max_seq_len: 768
-    num_layers: 6
+    num_layers: 12
     stride_coeff: 2
     learning_rate: 1e-4
     dropout: 0.1
@@ -151,14 +151,14 @@ Datasets:
     Mixed_knowledge_train: "Preprocess/Datasets/Mixed_knowledge_train.pkl"
     Mixed_knowledge_test: "Preprocess/Datasets/Mixed_knowledge_test.pkl"
 
-    UltraChat_train: "Preprocess/Datasets/UltraChat_train.pkl"
-    UltraChat_test: "Preprocess/Datasets/UltraChat_test.pkl"
+    UltraChat_train: "Preprocess/Datasets/chat_train.jsonl"
+    UltraChat_test: "Preprocess/Datasets/chat_test.jsonl"
 
 Metrics:
     savepath: "Model/Metrics"
 ```
 
-Each `Datasets` entry points to a pickled list of token IDs (or, for `UltraChat`, a pickled list of raw `<|user|>`/`<|assistant|>`-formatted conversation strings) produced by your own preprocessing — one pair per training phase described below.
+Each `Datasets` entry points to a pickled list of token IDs (or, for `ChatBotDataset`, a json file containing raw `<|user|>`/`<|assistant|>`-formatted conversation strings) produced by your own preprocessing — one pair per training phase described below.
 
 ### Training the tokenizer
 
@@ -168,8 +168,6 @@ The BPE tokenizer is trained directly on a raw text corpus (`Tokenizer.corpus_pa
 cd Preprocess
 python train_tokenizer.py
 ```
-
-> Note: `train_tokenizer.py` and the `__main__` block in `tokenizer.py` currently point to a local absolute path — update these to match your own environment before running.
 
 ### Training the model
 
@@ -193,10 +191,10 @@ import torch
 from GPT.Nova import NovaLM
 from Preprocess.tokenizer import BPE
 
-tokenizer = BPE(vocab_size=10_000, savepath="Preprocess")
-model = NovaLM(tokenizer=tokenizer, vocab_size=10_000, embed_dim=768, num_layers=6,
-               num_heads=8, max_seq_len=768, rope_base=10_000, dropout=0.1)
-model.load_state_dict(torch.load("Model/Nova_best_model.pth", map_location="cpu"))
+tokenizer = BPE(vocab_size=24_000, savepath="Preprocess")
+model = NovaLM(tokenizer=tokenizer, vocab_size=24_000, embed_dim=768, num_layers=12,
+               num_heads=12, max_seq_len=768, rope_base=10_000, dropout=0.1)
+load_model(Nova, "Model/Nova_best_model.safetensors")
 
 # Raw completion
 print(model.generate("Once upon a time", temperature=0.2, top_k=10, max_new_tokens=100, device="cpu"))
@@ -209,13 +207,14 @@ print(model.chat("What's the tallest mountain in the world?", temperature=0.2, t
 
 ## Training Approach
 
-Nova is trained in three progressive phases, each using its own dataset pair in `config.yaml` and its own tokenized `.pkl` files under `Preprocess/Datasets/`:
+The current training flow in this repo supports both token-level language modeling and chat-style fine-tuning, using the dataset configuration in `config.yaml`.
 
-1. **Vocabulary Learning** (`SimpleStories_train` / `SimpleStories_test`) — The model first learns basic language patterns — grammar, word order, simple narrative structure — from [SimpleStories](https://huggingface.co/datasets/SimpleStories/SimpleStories), a synthetic short-story corpus designed for training small, interpretable language models. This phase uses `VocabDataset`, with plain sliding-window next-token prediction over the whole corpus.
-2. **Knowledge Expansion** (`Mixed_knowledge_train` / `Mixed_knowledge_test`) — The model is then exposed to [Simple Wikipedia](https://simple.wikipedia.org/), giving it broader factual and world knowledge in simpler, more learnable language than full Wikipedia. This phase also uses `VocabDataset` with the same next-token pretraining objective, just over a different corpus.
-3. **Chat Structuring** (`UltraChat_train` / `UltraChat_test`) — Finally, the model is adapted toward conversational behavior using [UltraChat](https://huggingface.co/datasets/HuggingFaceH4/ultrachat_200k), a large-scale multi-turn dialogue dataset. This phase uses `ChatBotDataset`, which formats each conversation with `<|user|>` / `<|assistant|>` markers and masks the loss on everything except the assistant's turns, so the model is only trained to predict replies, not questions.
+- `VocabDataset` is used for sliding-window next-token prediction over tokenized corpora such as the SimpleStories and mixed-knowledge datasets.
+- `ChatBotDataset` is used for conversational training with JSONL chat examples loaded from `Preprocess/Datasets/chat_train.jsonl` and `chat_test.jsonl`.
 
-Each phase reuses the same architecture and checkpoint — only the dataset and, correspondingly, the `Dataset` class (`VocabDataset` vs. `ChatBotDataset`) fed into `train.py` change between them.
+The chat dataset is loaded by reading each JSON record, taking its `text` field, and passing it to `ChatBotDataset`, which then formats the conversation with `<bos>`, `<|user|>`, `<|assistant|>`, and `<|system|>` markers and masks the loss to only supervise assistant outputs.
+
+This means the current chat-training pipeline is based on the raw conversation text in the JSONL files rather than a separate UltraChat preprocessing step or a dedicated "phase 3" dataset loader.
 
 ## Training Metrics
  
@@ -263,9 +262,11 @@ Many AI systems are used without understanding what happens underneath. Nova is 
 
 ## Status
 
-✅ Nova is complete: BPE tokenizer training, a RoPE + SwiGLU decoder-only Transformer, KV-cached `generate()`/`chat()` inference, and a training loop with logged metrics are all implemented, and the model has been trained through all three phases — vocabulary learning on SimpleStories, knowledge expansion on Simple Wikipedia, and chat structuring on UltraChat.
+⚠️ Nova is still under active development.
 
-Future work may include further fine-tuning, larger-scale data, or architectural experiments, but the core pipeline described in this README is finished and functional end to end.
+The repo already includes the core building blocks for a decoder-only transformer: custom BPE tokenization, RoPE-based attention, KV-cached generation, chat-format training data handling, and a training/evaluation loop with metric logging. However, this is not a finished or benchmarked production model, and the current implementation is best treated as an experimental research project.
 
-### ⚠️ Note: 
+Future work may include further dataset refinement, longer training runs, tuning of the chat objective, and architectural experiments. The project is functional as a learning/codebase prototype, but it is still evolving.
+
+### ⚠️ Note:
 Nova is currently a small model, so don't expect GPT-4-level output — some incoherent, repetitive, or factually wrong responses are normal at this scale. The point of this project is the pipeline and the implementation, not chart-topping benchmarks.
