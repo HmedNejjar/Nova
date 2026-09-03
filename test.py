@@ -45,12 +45,23 @@ if MODEL_SAVE_PATH.exists():
         load_model(Nova, str(MODEL_SAVE_PATH))
 
 print(f"{sum(p.numel() for p in Nova.parameters())} parameters in the model")
-prompt = input("Enter a prompt: ")
 
-messages = [{"role": "system", "content": "You are Nova AI, a chatot assistant who provides accurate and short answers."},
-            {"role": "user", "content": prompt}]
+# Initialize messages with system prompt
+messages = [{"role": "system", "content": "Your name is Nova AI, a chatbot assistant who provides accurate and short answers. Never generate more than what the user asked for."}]
 
-output = Nova.chat(messages, TEMP, TOP_K, MAX_TOKENS, DEVICE)
-
-#output = Nova.generate(prompt, TEMP, TOP_K, MAX_TOKENS, DEVICE)
-print(f"Nova: {output}")
+# Start conversation loop
+while True:
+    user_input = input("\nYou: ").strip()
+    if not user_input or user_input.lower() in ["exit", "quit", "bye"]:
+        print("Nova: Goodbye!")
+        break
+    
+    # Add user message to conversation history
+    messages.append({"role": "user", "content": user_input})
+    
+    # Get response from Nova
+    output = Nova.chat(messages, TEMP, TOP_K, MAX_TOKENS, DEVICE)
+    print(f"Nova: {output}")
+    
+    # Add assistant response to conversation history
+    messages.append({"role": "assistant", "content": output})
