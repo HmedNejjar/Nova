@@ -6,7 +6,7 @@ sys.path.insert(1, str(ROOT))
 import torch
 import torch.nn as nn
 from torch import Tensor
-from LoRA import LoRALinear
+from GPT.LoRA import LoRALinear
 from Preprocess.pos_embed import RoPE
 
 class BatchedMultiHeadAttention(nn.Module):
