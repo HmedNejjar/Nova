@@ -25,6 +25,12 @@ class NovaLM(nn.Module):
         # Weight tying
         self.lm_head.weight = self.token_embedding.weight
         
+        if apply_LoRA:
+            # Freeze all parameters except LoRA layers
+            for name, param in self.named_parameters():
+                if "lora" not in name:
+                    param.requires_grad = False
+        
     def forward(self, X: Tensor, cache_list: list[dict] | None) -> tuple[Tensor, list[dict]]:
         # Embedding the tokens into vectors
         X = self.token_embedding(X)
