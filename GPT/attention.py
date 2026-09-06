@@ -6,11 +6,11 @@ sys.path.insert(1, str(ROOT))
 import torch
 import torch.nn as nn
 from torch import Tensor
-
+from LoRA import LoRALinear
 from Preprocess.pos_embed import RoPE
 
 class BatchedMultiHeadAttention(nn.Module):
-    def __init__(self, embed_dim: int, num_heads: int, max_seq_len: int, rope_base: int) -> None:
+    def __init__(self, embed_dim: int, num_heads: int, max_seq_len: int, rope_base: int, apply_LoRA: bool, rank: int, alpha:int, lora_dropout: float) -> None:
         super().__init__()
         assert embed_dim % num_heads == 0
         
@@ -23,6 +23,11 @@ class BatchedMultiHeadAttention(nn.Module):
         self.k_proj = nn.Linear(embed_dim, embed_dim)
         self.v_proj =  nn.Linear(embed_dim, embed_dim)
         
+        # Apply QV-LoRA if requested
+        if apply_LoRA:
+            self.q_proj = LoRALinear(self.q_proj, embed_dim, embed_dim, rank, alpha, lora_dropout)
+            self.v_proj = LoRALinear(self.v_proj, embed_dim, embed_dim, rank, alpha, lora_dropout)
+            
         # Initialize RoPE instance
         self.rope = RoPE(head_dim=self.head_dim, max_seq_len=max_seq_len, base= rope_base)
         

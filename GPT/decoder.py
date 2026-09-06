@@ -4,7 +4,7 @@ from torch import Tensor
 from GPT.attention import BatchedMultiHeadAttention
 
 class DecoderBlock(nn.Module):
-    def __init__(self, embed_dim: int, num_heads: int, max_seq_len: int, rope_base: int, dropout: float) -> None:
+    def __init__(self, embed_dim: int, num_heads: int, max_seq_len: int, rope_base: int, dropout: float, apply_LoRA: bool, rank: int, alpha:int, lora_dropout) -> None:
         super().__init__()
         
         self.embed_dim = embed_dim
@@ -24,7 +24,7 @@ class DecoderBlock(nn.Module):
         self.norm2 = nn.LayerNorm(embed_dim)
         
         # Batched MHA instance
-        self.MultiHeadAttention = BatchedMultiHeadAttention(embed_dim= embed_dim, num_heads= num_heads, max_seq_len= max_seq_len, rope_base= rope_base)
+        self.MultiHeadAttention = BatchedMultiHeadAttention(embed_dim= embed_dim, num_heads= num_heads, max_seq_len= max_seq_len, rope_base= rope_base, apply_LoRA= apply_LoRA, rank= rank, alpha= alpha, lora_dropout= lora_dropout)
         
     def forward(self, X: Tensor, cache: dict | None = None) -> tuple[Tensor, dict]:
         # 1. Normalize X
@@ -65,12 +65,12 @@ class DecoderBlock(nn.Module):
         return self.linear2(swiglu)
 
 class Decoder(nn.Module):
-    def __init__(self, embed_dim: int, num_layers: int, num_heads: int, max_seq_len: int, rope_base: int, dropout: float) -> None:
+    def __init__(self, embed_dim: int, num_layers: int, num_heads: int, max_seq_len: int, rope_base: int, dropout: float, apply_LoRA: bool, rank: int, alpha:int, lora_dropout: float) -> None:
         super().__init__()
         
         self.num_layers = num_layers
         
-        self.blocks = nn.ModuleList(DecoderBlock(embed_dim= embed_dim, num_heads= num_heads, max_seq_len= max_seq_len, rope_base= rope_base, dropout= dropout)
+        self.blocks = nn.ModuleList(DecoderBlock(embed_dim= embed_dim, num_heads= num_heads, max_seq_len= max_seq_len, rope_base= rope_base, dropout= dropout, apply_LoRA= apply_LoRA, rank= rank, alpha= alpha, lora_dropout= lora_dropout)
                                     for _ in range(num_layers))
         
     def forward(self, X: Tensor, cache_list: list[dict] | None) -> tuple[Tensor, list[dict]]:
@@ -83,7 +83,3 @@ class Decoder(nn.Module):
             new_cache_list.append(new_cache)
                 
         return (X, new_cache_list)
-    
-    
-        
-        
