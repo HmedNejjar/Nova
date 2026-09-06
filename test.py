@@ -8,7 +8,7 @@ import torch
 from GPT.Nova import NovaLM
 from Preprocess.tokenizer import BPE
 
-from safetensors.torch import save_model, load_model
+from safetensors.torch import load_model
 
 with open(ROOT / Path(r"config.yaml"), 'r') as f:
     config = yaml.safe_load(f)
@@ -46,7 +46,7 @@ if MODEL_SAVE_PATH.exists():
         print(f"Loading model from {MODEL_SAVE_PATH}")
         load_model(Nova, str(MODEL_SAVE_PATH))
 
-print(f"{sum(p.numel() for p in Nova.parameters())} parameters in the model")
+print(f"{sum(p.numel() for p in Nova.parameters())} parameters in the model") 
 
 # Initialize messages with system prompt
 messages = [{"role": "system", "content": SYS_PROMPT}]
