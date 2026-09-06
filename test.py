@@ -26,7 +26,9 @@ DROPOUT = float(model_config["dropout"])
 ROPE_BASE = model_config["rope_base"]
 MODEL_SAVE_PATH = ROOT / Path(model_config["savepath"])
 
+SYS_PROMPT = model_config["default_sys_prompt"]
 TOP_K = model_config["top_k"]
+REP_PEN = model_config["repetition_penalty"]
 TEMP = model_config["temperature"]
 
 VOCAB_SIZE = tokenizer_config["vocab_size"]
@@ -47,7 +49,7 @@ if MODEL_SAVE_PATH.exists():
 print(f"{sum(p.numel() for p in Nova.parameters())} parameters in the model")
 
 # Initialize messages with system prompt
-messages = [{"role": "system", "content": "Your name is Nova AI, a chatbot assistant who provides accurate and short answers. Never generate more than what the user asked for."}]
+messages = [{"role": "system", "content": SYS_PROMPT}]
 
 # Start conversation loop
 while True:
@@ -60,7 +62,7 @@ while True:
     messages.append({"role": "user", "content": user_input})
     
     # Get response from Nova
-    output = Nova.chat(messages, TEMP, TOP_K, MAX_TOKENS, DEVICE)
+    output = Nova.chat(messages, TEMP, TOP_K, REP_PEN, MAX_TOKENS, DEVICE)
     print(f"Nova: {output}")
     
     # Add assistant response to conversation history

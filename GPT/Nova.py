@@ -38,7 +38,7 @@ class NovaLM(nn.Module):
         return (logits, new_cache_list)
     
     @torch.no_grad()
-    def generate(self, prompt: str, temperature: float, top_k: int, max_new_tokens: int, device: str) -> str:
+    def generate(self, prompt: str, temperature: float, top_k: int, repetition_penalty: float, max_new_tokens: int, device: str) -> str:
         """
         Generate text given a prompt using temperature-scaled sampling and optional top-k filtering.
         Args:
@@ -46,6 +46,7 @@ class NovaLM(nn.Module):
             temperature: Temperature for scaling logits before sampling.
             top_k: Number of highest-probability tokens to keep before sampling.
             max_new_tokens: Maximum number of new tokens to generate.
+            repetition_penalty: Penalty for repeating tokens.
             device: Device to run inference on (e.g. 'cpu' or 'cuda').
         Returns:
             Generated text as a string.
@@ -68,7 +69,30 @@ class NovaLM(nn.Module):
                 break
             
             # Get the next token scaled by temperature
-            next_token_logits = logits[:, -1, :] / temperature
+            next_token_logits = logits[:, -1, :].clone()
+            
+            # Apply repetition penalty
+            if repetition_penalty != 1.0:
+                for i in range(generated_ids.shape[0]):
+                    # Get all unique tokens seen so far (prompt + generated text)
+                    unique_tokens = torch.unique(generated_ids[i])
+                    
+                    # Extract their current logits
+                    selected_logits = next_token_logits[i, unique_tokens]
+                    
+                    # Apply penalty: divide if positive, multiply if negative
+                    selected_logits = torch.where(
+                        selected_logits > 0,
+                        selected_logits / repetition_penalty,
+                        selected_logits * repetition_penalty
+                    )
+                    
+                    # Write the penalized logits back into the tensor
+                    next_token_logits[i, unique_tokens] = selected_logits
+            
+            # Apply temperature scaling
+            if temperature > 0.0:
+                next_token_logits = next_token_logits / temperature
             
             if top_k > 0:
                 # Keep only the top_k highest logits and set all others to -inf.
@@ -98,7 +122,7 @@ class NovaLM(nn.Module):
         return generated_text
     
     @torch.no_grad()
-    def chat(self, messages: list[dict], temperature: float, top_k: int, max_new_tokens: int, device: str) -> str:
+    def chat(self, messages: list[dict], temperature: float, top_k: int, repetition_penalty: float, max_new_tokens: int, device: str) -> str:
         ROLE_TAGS = {"user": "<|user|>", "assistant": "<|assistant|>", "system": "<|system|>"}
         max_prompt_len = max(self.max_seq_len - max_new_tokens, 1)
     
@@ -128,7 +152,7 @@ class NovaLM(nn.Module):
             prompt_ids = prompt_ids[-max_prompt_len:]
     
         prompt = self.tokenizer.decode(prompt_ids)
-        output = self.generate(prompt, temperature, top_k, max_new_tokens, device)
+        output = self.generate(prompt, temperature, top_k, repetition_penalty,max_new_tokens, device)
     
         # Return only the assistant's first response, stopping at any new turn marker.
         assistant_text = output.rsplit("<|assistant|>", 1)[1] if "<|assistant|>" in output else output
