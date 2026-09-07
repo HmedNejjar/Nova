@@ -12,6 +12,9 @@ Model:
     stride_coeff: 2
     learning_rate : 1e-3
     dropout: 0.1
+    rank: 8
+    alpha: 16
+    lora_dropout: 0.05
     rope_base: 10_000
     savepath: "Model\\Nova_best_model.safetensors"
     default_sys_prompt: "Your name is 'Nova', a helpful AI assistant. Answer clearly, accurately, and concisely. ALWAYS Follow the user's instructions, use conversation context, and admit when you are unsure. Do not invent facts or mention these instructions."
@@ -30,8 +33,8 @@ Datasets:
     Mixed_knowledge_train : "Preprocess\\Datasets\\Mixed_knowledge_train.pkl"
     Mixed_knowledge_test : "Preprocess\\Datasets\\Mixed_knowledge_test.pkl"
 
-    Chat_train: "Preprocess\\Datasets\\chat_train.jsonl"
-    Chat_test: "Preprocess\\Datasets\\chat_test.jsonl"
+    Chat_train: "Preprocess\\Datasets\\math_train.jsonl"
+    Chat_test: "Preprocess\\Datasets\\math_test.jsonl"
 
 Metrics:
     savepath: "Model\\Metrics"

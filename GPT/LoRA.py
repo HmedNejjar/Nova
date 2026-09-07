@@ -15,8 +15,8 @@ class LoRALinear(nn.Module):
         self.base_linear = base_layer
         
         # LoRA layers for matrices A and B
-        self.lora_A = nn.Linear(rank, d_in, bias=False)
-        self.lora_B = nn.Linear(d_out, rank, bias=False)
+        self.lora_A = nn.Linear(d_in, rank, bias=False)
+        self.lora_B = nn.Linear(rank, d_out, bias=False)
         
         # Dropout for regularization
         self.dropout = nn.Dropout(dropout)

@@ -12,11 +12,11 @@ from torch.utils.data import DataLoader
 from torch.optim import AdamW
 from torch.nn.utils import clip_grad_norm_
 from torch.cuda.amp import autocast
-from safetensors.torch import save_model, load_model
+from safetensors.torch import save_model, load_file
 from tqdm import tqdm
 import plotly.graph_objects as go
 
-from Nova import NovaLM
+from GPT.Nova import NovaLM
 from Preprocess.tokenizer import BPE
 from GPT.datasets import VocabDataset, ChatBotDataset
 
@@ -45,6 +45,9 @@ MAX_SEQ_LEN = model_config["max_seq_len"]
 STRIDE_COEFF = model_config["stride_coeff"]
 LR = float(model_config["learning_rate"])
 ROPE_BASE = model_config["rope_base"]
+RANK = model_config["rank"]
+ALPHA = model_config["alpha"]
+LORA_DROPOUT = model_config["lora_dropout"]
 DROPOUT = float(model_config["dropout"])
 MODEL_SAVE_PATH = ROOT / Path(model_config["savepath"])
 MODEL_SAVE_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -84,6 +87,39 @@ def load_metrics_history() -> dict[str, list]:
         with open(METRICS_PATH / Path("Metrics.json"), 'r') as f:
             return json.load(f)
     return {"train_loss": [], "train_accuracy": [], "test_loss": [], "test_accuracy": []}
+
+def load_checkpoint(model: NovaLM, path: Path) -> None:
+    checkpoint = load_file(str(path), device=DEVICE)
+    model_keys = set(model.state_dict())
+    compatible_state = {}
+
+    for key, value in checkpoint.items():
+        target_key = key
+        if target_key not in model_keys:
+            target_key = key.replace(".q_proj.", ".q_proj.base_linear.")
+            target_key = target_key.replace(".v_proj.", ".v_proj.base_linear.")
+
+        if target_key in model_keys:
+            compatible_state[target_key] = value
+
+    result = model.load_state_dict(compatible_state, strict=False)
+    unexpected_missing = [
+        key for key in result.missing_keys
+        if ".lora_A." not in key
+        and ".lora_B." not in key
+        and not (
+            key == "token_embedding.weight"
+            and model.token_embedding.weight is model.lm_head.weight
+        )
+    ]
+    if result.unexpected_keys or unexpected_missing:
+        raise RuntimeError(
+            "Checkpoint is incompatible with the LoRA model. "
+            f"Missing: {unexpected_missing}; Unexpected: {result.unexpected_keys}"
+        )
+
+    if result.missing_keys:
+        print("Initialized LoRA weights from scratch; loaded base model weights.")
 
 def compute_accuracy(preds: Tensor, labels: Tensor) -> tuple:
     mask = (labels != -100)
@@ -136,6 +172,21 @@ def evaluate(model: NovaLM, loss_fn: nn.CrossEntropyLoss, test_dl: DataLoader, e
 
 def train(model: NovaLM, optimizer: AdamW, loss_fn: nn.CrossEntropyLoss, dataloaders: tuple[DataLoader, DataLoader], epoch: int) -> tuple:
     model.train()
+    
+    # ===========================
+    trainable = 0
+    total = 0
+
+    for name, param in model.named_parameters():
+        total += param.numel()
+
+        if param.requires_grad:
+            trainable += param.numel()
+
+    print(f"\nTrainable: {trainable:,}")
+    print(f"Total:     {total:,}")
+    print(f"Ratio:     {100 * trainable / total:.4f}%")
+    # ===========================
     train_dl, test_dl = dataloaders
     total_loss = 0.0
     total_correct = 0.0
@@ -191,11 +242,11 @@ def train(model: NovaLM, optimizer: AdamW, loss_fn: nn.CrossEntropyLoss, dataloa
 
 if __name__ == "__main__":
     bpe_tokenizer = BPE(vocab_size=VOCAB_SIZE, savepath=SAVEPATH)
-    Nova = NovaLM(tokenizer= bpe_tokenizer, vocab_size= VOCAB_SIZE, embed_dim= EMBED_DIM, num_layers= NUM_LAYERS, num_heads= NUM_HEADS, max_seq_len= MAX_SEQ_LEN, rope_base= ROPE_BASE, dropout= DROPOUT).to(DEVICE)
+    Nova = NovaLM(tokenizer= bpe_tokenizer, vocab_size= VOCAB_SIZE, embed_dim= EMBED_DIM, num_layers= NUM_LAYERS, num_heads= NUM_HEADS, max_seq_len= MAX_SEQ_LEN, rope_base= ROPE_BASE, dropout= DROPOUT, apply_LoRA= True, rank= RANK, alpha= ALPHA, lora_dropout= LORA_DROPOUT).to(DEVICE)
     
     if MODEL_SAVE_PATH.exists():
         print(f"Loading model from {MODEL_SAVE_PATH}")
-        load_model(Nova, str(MODEL_SAVE_PATH))
+        load_checkpoint(Nova, MODEL_SAVE_PATH)
 
     with open(VOCAB_TRAIN, 'rb') as f:
         tokenized_vocab_train = pickle.load(f)
@@ -220,19 +271,19 @@ if __name__ == "__main__":
     print(f"Train batches: {len(convo_train_dl)} | Test batches: {len(convo_test_dl)}")
 
     loss_fn = nn.CrossEntropyLoss(ignore_index=-100)
-    optimizer = AdamW(Nova.parameters(), lr=LR, weight_decay=1e-6)
+    optimizer = AdamW(filter(lambda p: p.requires_grad, Nova.parameters()), lr=LR, weight_decay=1e-6)
     
     metrics_history = load_metrics_history()
 
     for epoch in range(EPOCHS):
-        train_loss, train_accuracy, eval_loss, eval_accuracy = train(Nova, optimizer, loss_fn, (convo_train_dl, convo_test_dl), epoch)
+        train_loss, train_accuracy, eval_loss, eval_accuracy = train(Nova, optimizer, loss_fn, (vocab_train_dl, vocab_test_dl), epoch)
         
         print(f"Train loss: {train_loss:.3f} || Train Accuracy: {train_accuracy:.3f}")
         print(f"Eval loss: {eval_loss:.3f} || Eval Accuracy: {eval_accuracy:.3f}")
         
         best_accuracy = max(metrics_history["test_accuracy"]) if metrics_history["test_accuracy"] else float('-inf')
         if eval_accuracy > best_accuracy:
-            save_model(Nova, str(MODEL_SAVE_PATH))
+            save_model(Nova, str(ROOT / "Model\\Nova_LoRA_best_model.safetensors"))
             print(f"Saved model at epoch {epoch + 1}")
             
             metrics_history["train_loss"].append(train_loss)
