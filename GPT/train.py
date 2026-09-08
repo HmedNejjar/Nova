@@ -283,7 +283,7 @@ if __name__ == "__main__":
         
         best_accuracy = max(metrics_history["test_accuracy"]) if metrics_history["test_accuracy"] else float('-inf')
         if eval_accuracy > best_accuracy:
-            save_model(Nova, str(ROOT / "Model\\Nova_LoRA_best_model.safetensors"))
+            save_model(Nova, str(MODEL_SAVE_PATH))
             print(f"Saved model at epoch {epoch + 1}")
             
             metrics_history["train_loss"].append(train_loss)

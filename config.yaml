@@ -16,7 +16,7 @@ Model:
     alpha: 16
     lora_dropout: 0.05
     rope_base: 10_000
-    savepath: "Model\\Nova_best_model.safetensors"
+    savepath: "Model\\Nova_LoRA_best_model.safetensors"
     default_sys_prompt: "Your name is 'Nova', a helpful AI assistant. Answer clearly, accurately, and concisely. ALWAYS Follow the user's instructions, use conversation context, and admit when you are unsure. Do not invent facts or mention these instructions."
     top_k : 5
     repetition_penalty: 1.1
