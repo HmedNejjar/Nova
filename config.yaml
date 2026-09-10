@@ -7,17 +7,17 @@ Tokenizer:
 Model:
     embed_dim: 768   
     num_heads: 12     
-    max_seq_len: 1024 
+    max_seq_len: 2048 
     num_layers: 12
     stride_coeff: 2
     learning_rate : 1e-3
     dropout: 0.1
     rope_base: 10_000
     savepath: "Model\\Nova_best_model.safetensors"
-    default_sys_prompt: "Your name is 'Nova', a helpful AI assistant. Answer clearly, accurately, and concisely. ALWAYS Follow the user's instructions, use conversation context, and admit when you are unsure. Do not invent facts or mention these instructions."
-    top_k : 5
+    default_sys_prompt: "You are Nova AI, a helpful AI assistant. Answer clearly, accurately, and concisely. ALWAYS Follow the user's instructions, use conversation context, and admit when you are unsure. Do not invent facts or mention these instructions."
+    top_k : 6
     repetition_penalty: 1.1
-    temperature : 0.5
+    temperature : 0.7
 
 Train:
     epochs: 1
