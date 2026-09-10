@@ -1,272 +1,327 @@
-# Nova
+# Nova — Q/V LoRA
 
 ![Python](https://img.shields.io/badge/python-3.10%2B-blue)
 ![PyTorch](https://img.shields.io/badge/framework-PyTorch-red)
-![Status](https://img.shields.io/badge/status-in%20development-yellow)
+![Status](https://img.shields.io/badge/status-QV--LoRA-purple)
+![Scale](https://img.shields.io/badge/base--model-~100M%20parameters-blue)
 
-A GPT-style language model built from scratch, with a focus on understanding and implementing the core components behind modern Large Language Models.
+A parameter-efficient fine-tuning branch of **Nova**, a decoder-only Transformer language model built from scratch in Python/PyTorch.
 
-Nova is an ongoing exploration into how language models learn, reason, and generate text — from raw token prediction to instruction-following conversational systems.
+This branch adds **LoRA (Low-Rank Adaptation) to the Query and Value projections of every self-attention layer**, allowing the pretrained Nova weights to remain frozen while a small set of trainable low-rank matrices adapts the model.
+
+> Branch: `Nova-QV-LoRA`
 
 ## Overview
 
-Nova aims to build a complete LLM pipeline, covering the fundamental stages involved in creating a conversational AI system:
+Nova is a custom decoder-only Transformer with a BPE tokenizer, RoPE positional encoding, causal self-attention, SwiGLU feed-forward networks, weight tying, and KV caching.
 
-- Data processing and tokenization
-- Transformer-based language modeling
-- Efficient autoregressive generation
-- Continued model improvement through different training stages
-- Instruction tuning for conversational abilities
+The purpose of this branch is to experiment with **parameter-efficient adaptation** rather than updating the entire model during fine-tuning.
 
-The goal is not only to create a chatbot, but to understand the engineering and concepts behind the systems that power modern AI assistants.
+The LoRA path is applied specifically to:
 
-## Current Features
+- `q_proj` — Query projection
+- `v_proj` — Value projection
 
-- **Decoder-only Transformer architecture**, implemented from scratch in PyTorch
-- **Custom Byte-Pair Encoding (BPE) tokenizer**, trained directly on a raw text corpus (no external tokenizer libraries)
-- **Multi-head self-attention** with **Rotary Positional Embeddings (RoPE)**
-- **SwiGLU feed-forward network** and pre-norm residual blocks, in the style of modern LLaMA-esque decoders
-- **Weight-tying** between the token embedding and output projection layers
-- **KV-cache optimization** for efficient autoregressive inference, with correctly offset RoPE and causal masking during incremental decoding
-- **Autoregressive text generation** with temperature scaling and top-k sampling, plus a `chat()` wrapper that applies the `<|user|>`/`<|assistant|>` template automatically
-- Dataset scaffolding for both **pretraining** (sliding-window next-token prediction) and **instruction tuning** (`<|user|>` / `<|assistant|>` formatted conversations with assistant-only loss masking)
-- Mixed-precision training loop (AdamW, `torch.cuda.amp`) with per-epoch loss/accuracy tracking and Plotly-based training curves
+The Key projection and the output projection remain unchanged.
 
-## How Nova Works
+## What Changed in This Branch
 
-At a high level, a prompt goes in as text and comes out as text, but everything in between is just numbers flowing through the network:
+Compared with the base Nova implementation, this branch adds:
 
-```mermaid
-flowchart TD
-    A["Input text"] --> B["BPE Tokenizer (encode)"]
-    B --> C["Token IDs"]
-    C --> D["Token Embedding"]
-    D --> E["Decoder Block x 12"]
-    E --> F["Final LayerNorm"]
-    F --> G["LM Head (tied to embedding weights)"]
-    G --> H["Logits over the vocabulary"]
-    H --> I["Temperature + top-k sampling"]
-    I --> J["Next token"]
-    J -.->|"fed back in, KV cache reused"| E
-    J --> K["BPE Tokenizer (decode)"]
-    K --> L["Output text"]
-```
+1. A reusable `LoRALinear` module.
+2. Optional LoRA wrapping for Q and V projections in attention.
+3. LoRA hyperparameters in `config.yaml`.
+4. Automatic freezing of the original model when LoRA is enabled.
+5. Checkpoint loading that maps ordinary Q/V linear weights into the corresponding LoRA base layers.
+6. Saving/loading of the resulting LoRA-enabled model with `safetensors`.
 
-1. **Tokenize** — the prompt is split into subword pieces by the BPE tokenizer and converted to integer IDs.
-2. **Embed** — each ID is looked up in a learned embedding table and turned into a 768-dim vector.
-3. **Decode** — the vectors pass through 12 stacked decoder blocks (below), which is where almost all of the "thinking" happens.
-4. **Project** — a final LayerNorm and a linear head (weight-tied to the embedding table) turn the last hidden vector into a score for every token in the vocabulary.
-5. **Sample** — logits are scaled by temperature, cut down to the top-k most likely tokens, and one is sampled — that's the next token.
-6. **Repeat** — the new token is fed back in (reusing cached attention keys/values instead of recomputing the whole sequence) until an end-of-sequence token or the length limit is hit, then the ID sequence is decoded back to text.
+The implementation lives primarily in `GPT/LoRA.py`, `GPT/attention.py`, `GPT/decoder.py`, and `GPT/Nova.py`. citehttps://github.com/HmedNejjar/Nova/blob/Nova-QV-LoRA/GPT/LoRA.pyhttps://github.com/HmedNejjar/Nova/blob/Nova-QV-LoRA/GPT/attention.py
 
-Zooming into a single decoder block:
+## LoRA Architecture
+
+The Q/V LoRA path used in this branch can be visualized as:
 
 ```mermaid
 flowchart TD
-    X["Input"] --> N1["LayerNorm"]
-    N1 --> ATT["Multi-Head Self-Attention + RoPE, with KV cache and causal masking"]
-    ATT --> ADD1(("+"))
-    X --> ADD1
-    ADD1 --> N2["LayerNorm"]
-    N2 --> FFN["SwiGLU Feed-Forward Network"]
-    FFN --> ADD2(("+"))
-    ADD1 --> ADD2
-    ADD2 --> OUT["Output"]
+    A[Input Hidden States X] --> Q[Q Projection]
+    A --> K[K Projection]
+    A --> V[V Projection]
+
+    Q --> QA[LoRA A]
+    QA --> QB[LoRA B]
+    Q --> QBase[Frozen Base Q]
+    QB --> QS[Scaled LoRA Update α/r]
+    QBase --> QAdd((+))
+    QS --> QAdd
+
+    V --> VA[LoRA A]
+    VA --> VB[LoRA B]
+    V --> VBase[Frozen Base V]
+    VB --> VS[Scaled LoRA Update α/r]
+    VBase --> VAdd((+))
+    VS --> VAdd
+
+    QAdd --> ROPE[RoPE + Attention]
+    K --> ROPE
+    VAdd --> ROPE
+    ROPE --> O[Output Projection]
+    O --> R[Residual Connection]
+    R --> FFN[SwiGLU FFN]
+    FFN --> OUT[Next Decoder Block]
 ```
 
-- **Pre-norm + attention** — the block normalizes first, then runs multi-head self-attention. Rotary Positional Embeddings (RoPE) rotate the query/key vectors based on position instead of adding a separate positional embedding, so relative position is baked directly into the attention scores. A causal mask stops any token from attending to future tokens, and during generation the keys/values for past tokens are cached instead of recomputed.
-- **Residual add** — the attention output is added back to the block's input (a skip connection), which keeps gradients flowing through deep stacks.
-- **Pre-norm + SwiGLU FFN** — the result is normalized again and passed through a gated feed-forward network: one linear layer produces a "gate," another produces a "value," the gate is passed through SiLU and multiplied elementwise with the value, then projected back down to the embedding size.
-- **Residual add** — same skip-connection pattern, giving the final output of the block.
+For a normal linear projection:
 
-Twelve of these blocks are stacked to form the full decoder, and this same architecture is reused unchanged across all three training phases below — only the data and loss masking change.
-
-## Project Structure
-
-```
-Nova/
-├── GPT/
-│   ├── Nova.py        # NovaLM: embedding, decoder, LM head, generate() and chat()
-│   ├── attention.py   # Multi-head self-attention with RoPE + KV cache
-│   ├── decoder.py      # Decoder block (pre-norm attention + SwiGLU FFN)
-│   ├── datasets.py     # VocabDataset (pretraining) & ChatBotDataset (instruction tuning)
-│   └── train.py        # Training loop, evaluation, and metric plotting
-├── Preprocess/
-│   ├── tokenizer.py        # BPE tokenizer: training, encode/decode
-│   ├── train_tokenizer.py  # Script to train and save a BPE vocab/merges
-│   └── pos_embed.py        # Rotary Positional Embedding (RoPE) implementation
-├── config.yaml         # Tokenizer, model, training, and dataset configuration
-├── test.py             # Loads a checkpoint and chats with it from the command line
-└── README.md
+```text
+Y = W X
 ```
 
-## Getting Started
+This branch augments the frozen projection with a trainable low-rank update:
 
-### Requirements
-
-- Python 3.10+
-- [PyTorch](https://pytorch.org/)
-- PyYAML
-- tqdm
-- plotly
-
-```bash
-git clone https://github.com/HmedNejjar/Nova.git
-cd Nova
-pip install torch pyyaml tqdm plotly
+```text
+Y = W X + (α / r) B(A(X))
 ```
 
-### Configuration
+where:
 
-All hyperparameters and paths are controlled through `config.yaml`:
+- `W` is the original frozen projection matrix
+- `A` projects from the model dimension to the LoRA rank
+- `B` projects back to the original output dimension
+- `r` is the LoRA rank
+- `α` controls the update scaling
 
-```yaml
-Tokenizer:
-    type: "Byte-Pair Encoding"
-    savepath: "Preprocess"
-    corpus_path: "corpus.txt"
-    vocab_size: 24_000
+The implementation initializes `A` with Kaiming initialization and `B` to zeros, while freezing the original linear layer. 
 
-Model:
-    embed_dim: 768
-    num_heads: 12
-    max_seq_len: 768
-    num_layers: 12
-    stride_coeff: 2
-    learning_rate: 1e-4
-    dropout: 0.1
-    rope_base: 10_000
-    savepath: "Model/Nova_best_model.pth"
-    top_k: 10
-    temperature: 0.2
+### Attention Flow
 
-Train:
-    epochs: 10
-    batch_size: 8
+Each attention block computes Q, K, and V from the normalized hidden states. Only Q and V receive LoRA adapters; K remains a standard frozen projection.
 
-Datasets:
-    SimpleStories_train: "Preprocess/Datasets/Vocab_train.pkl"
-    SimpleStories_test: "Preprocess/Datasets/Vocab_test.pkl"
+LoRA is enabled conditionally, so the same attention implementation can operate with or without Q/V adapters. 
+## Base Model Architecture
 
-    Mixed_knowledge_train: "Preprocess/Datasets/Mixed_knowledge_train.pkl"
-    Mixed_knowledge_test: "Preprocess/Datasets/Mixed_knowledge_test.pkl"
+The underlying Nova model remains a 12-layer decoder-only Transformer:
 
-    UltraChat_train: "Preprocess/Datasets/chat_train.jsonl"
-    UltraChat_test: "Preprocess/Datasets/chat_test.jsonl"
-
-Metrics:
-    savepath: "Model/Metrics"
+```text
+Input tokens
+    │
+    ▼
+BPE Tokenizer
+    │
+    ▼
+Token Embedding (768)
+    │
+    ▼
+┌───────────────────────────────┐
+│ Decoder Block × 12            │
+│                               │
+│ LayerNorm                     │
+│   ↓                           │
+│ Multi-Head Self-Attention     │
+│   ├── Q + LoRA                │
+│   ├── K                       │
+│   └── V + LoRA                │
+│   ↓                           │
+│ Residual                      │
+│   ↓                           │
+│ LayerNorm                     │
+│   ↓                           │
+│ SwiGLU FFN                    │
+│   ↓                           │
+│ Residual                      │
+└───────────────────────────────┘
+    │
+    ▼
+Final LayerNorm
+    │
+    ▼
+Tied LM Head
+    │
+    ▼
+24k-token vocabulary
 ```
 
-Each `Datasets` entry points to a pickled list of token IDs (or, for `ChatBotDataset`, a json file containing raw `<|user|>`/`<|assistant|>`-formatted conversation strings) produced by your own preprocessing — one pair per training phase described below.
+The decoder uses 12 attention heads, 64 dimensions per head, RoPE, KV caching, and a SwiGLU feed-forward network.
 
-### Training the tokenizer
+## Configuration
 
-The BPE tokenizer is trained directly on a raw text corpus (`Tokenizer.corpus_path` in `config.yaml`) and saves `vocab.json` / `merges.json` to the configured `savepath`.
+The branch configuration currently specifies:
 
-```bash
-cd Preprocess
-python train_tokenizer.py
+| Parameter | Value |
+|---|---:|
+| Vocabulary size | 24,000 |
+| Embedding dimension | 768 |
+| Attention heads | 12 |
+| Head dimension | 64 |
+| Decoder layers | 12 |
+| Maximum sequence length | 1,024 |
+| RoPE base | 10,000 |
+| Dropout | 0.1 |
+| LoRA rank | 8 |
+| LoRA alpha | 16 |
+| LoRA dropout | 0.05 |
+| Learning rate | 1e-3 |
+| Epochs | 1 |
+| Batch size | 8 |
+| Top-k | 5 |
+| Temperature | 0.5 |
+| Repetition penalty | 1.1 |
+
+These values come directly from the branch's `config.yaml`.
+
+## Trainable Parameters
+
+When `apply_LoRA=True`, Nova freezes every parameter whose name does not contain `lora`.
+
+Therefore the trainable parameters are the LoRA matrices only:
+
+```text
+q_proj.lora_A
+q_proj.lora_B
+v_proj.lora_A
+v_proj.lora_B
 ```
 
-### Training the model
+for each of the 12 decoder layers.
 
-Once the tokenizer is trained and a tokenized dataset (pickled token ID lists, referenced under `Datasets` in `config.yaml`) is available, run:
+The base Q, K, V, output projections, embeddings, normalization layers, and SwiGLU parameters remain frozen.
+
+For the configured dimensions (`d = 768`, `r = 8`), one LoRA adapter on a projection contains:
+
+```text
+a: 768 × 8 = 6,144 parameters
+b: 8 × 768 = 6,144 parameters
+--------------------------------
+total:        12,288 parameters
+```
+
+With both Q and V adapted, that is **24,576 trainable LoRA parameters per decoder layer**, before accounting for any implementation-specific parameter-count reporting.
+
+## Checkpoint Loading
+
+This branch is designed to start from a pretrained Nova checkpoint rather than training the base model again.
+
+When a checkpoint contains ordinary Q/V projection weights, the training script maps them into:
+
+```text
+q_proj.base_linear.*
+v_proj.base_linear.*
+```
+
+The LoRA matrices are left as their LoRA initialization when they are not present in the checkpoint.
+
+Once a LoRA checkpoint has been saved, rerunning training loads the saved LoRA weights instead of creating fresh adapters.
+
+## Training Data
+
+The branch configuration points its chat dataset entries to:
+
+```text
+Preprocess/Datasets/math_train.jsonl
+Preprocess/Datasets/math_test.jsonl
+```
+
+The training pipeline reads JSONL records containing a `text` field and constructs `ChatBotDataset` instances for these conversation files.
+
+## Training Pipeline
+
+Run:
 
 ```bash
 python GPT/train.py
 ```
 
-This trains `NovaLM` with AdamW and mixed precision, tracks train/eval loss and token-level accuracy per epoch, checkpoints the best model, and writes `loss_metrics.html` / `accuracy_metrics.html` (interactive Plotly charts) to the project root.
+The script:
 
-### Generating text
+1. Loads the tokenizer.
+2. Instantiates Nova with Q/V LoRA enabled.
+3. Loads an existing LoRA/base checkpoint when available.
+4. Loads the tokenized vocabulary and chat datasets.
+5. Builds the training components.
+6. Optimizes only parameters with `requires_grad=True`.
+7. Evaluates the model and saves the best checkpoint in `safetensors` format.
+8. Writes metric history and Plotly HTML curves.
 
-The tokenizer is passed in once, at construction time, and stored on the model. `NovaLM` then exposes two generation methods, both using the KV cache with temperature-scaled, top-k sampling:
+The optimizer is created from the trainable subset of the model, so frozen base parameters are not updated.
 
-- `generate()` — raw next-token sampling from a plain string prompt
-- `chat()` — wraps `generate()` with the `<bos> <|user|> ... <|assistant|> ...` template and splits the result back into user/assistant turns
+## Inference
+
+The normal Nova generation and chat interfaces remain available.
 
 ```python
-import torch
-from GPT.Nova import NovaLM
-from Preprocess.tokenizer import BPE
+response = model.chat(
+    messages=[
+        {"role": "user", "content": "What is 12 × 8?"}
+    ],
+    temperature=0.5,
+    top_k=5,
+    repetition_penalty=1.1,
+    max_new_tokens=150,
+    device="cuda"
+)
 
-tokenizer = BPE(vocab_size=24_000, savepath="Preprocess")
-model = NovaLM(tokenizer=tokenizer, vocab_size=24_000, embed_dim=768, num_layers=12,
-               num_heads=12, max_seq_len=768, rope_base=10_000, dropout=0.1)
-load_model(Nova, "Model/Nova_best_model.safetensors")
-
-# Raw completion
-print(model.generate("Once upon a time", temperature=0.2, top_k=10, max_new_tokens=100, device="cpu"))
-
-# Chat-formatted turn
-print(model.chat("What's the tallest mountain in the world?", temperature=0.2, top_k=10, max_new_tokens=60, device="cpu"))
+print(response)
 ```
 
-`test.py` wraps this into a small REPL — run `python test.py` from the project root to load the checkpoint at `Model.savepath` and chat with it from the command line.
+Generation still uses temperature scaling, top-k filtering, repetition penalty, EOS stopping, and KV caching.
 
-## Training Approach
+## Project Structure
 
-The current training flow in this repo supports both token-level language modeling and chat-style fine-tuning, using the dataset configuration in `config.yaml`.
-
-- `VocabDataset` is used for sliding-window next-token prediction over tokenized corpora such as the SimpleStories and mixed-knowledge datasets.
-- `ChatBotDataset` is used for conversational training with JSONL chat examples loaded from `Preprocess/Datasets/chat_train.jsonl` and `chat_test.jsonl`.
-
-The chat dataset is loaded by reading each JSON record, taking its `text` field, and passing it to `ChatBotDataset`, which then formats the conversation with `<bos>`, `<|user|>`, `<|assistant|>`, and `<|system|>` markers and masks the loss to only supervise assistant outputs.
-
-This means the current chat-training pipeline is based on the raw conversation text in the JSONL files rather than a separate UltraChat preprocessing step or a dedicated "phase 3" dataset loader.
-
-## Training Metrics
- 
-Loss and accuracy curves logged by `train.py` for each phase, saved to [`Metrics/`](Metrics). Each image below is clickable and opens the corresponding interactive Plotly chart (zoom, pan, hover for exact values).
- 
-### Phase 1 — Vocabulary Learning (SimpleStories)
- 
-[<img src="Metrics/Phase%201/loss%20phase%201.png" width="49%">](https://htmlpreview.github.io/?https://raw.githubusercontent.com/HmedNejjar/Nova/main/Metrics/Phase%201/loss_metrics%20phase%201.html) [<img src="Metrics/Phase%201/accuracy%20phase%201.png" width="49%">](https://htmlpreview.github.io/?https://raw.githubusercontent.com/HmedNejjar/Nova/main/Metrics/Phase%201/accuracy_metrics%20phase%201.html)
- 
-Loss drops sharply in the first couple of epochs and keeps converging; train and test accuracy climb together and stay close through most of training, with only a mild, expected gap opening up late — healthy behavior for this narrow-vocabulary phase.
- 
-### Phase 2 — Knowledge Expansion (Simple Wikipedia)
- 
-[<img src="Metrics/Phase%202/loss%20phase%202.png" width="49%">](https://htmlpreview.github.io/?https://raw.githubusercontent.com/HmedNejjar/Nova/main/Metrics/Phase%202/loss_metrics%20phase%202.html) [<img src="Metrics/Phase%202/accuracy%20phase%202.png" width="49%">](https://htmlpreview.github.io/?https://raw.githubusercontent.com/HmedNejjar/Nova/main/Metrics/Phase%202/accuracy_metrics%20phase%202.html)
- 
-Loss and accuracy continue improving from the phase 1 checkpoint on the harder, more knowledge-dense Simple Wikipedia data, reflecting the jump in vocabulary and factual content compared to the simple-story corpus.
- 
-### Phase 3 — Chat Structuring (UltraChat)
- 
-[<img src="Metrics/Phase%203/loss%20phase%203.png" width="49%">](https://htmlpreview.github.io/?https://raw.githubusercontent.com/HmedNejjar/Nova/main/Metrics/Phase%203/loss_metrics%20phase%203.html) [<img src="Metrics/Phase%203/accuracy%20phase%203.png" width="49%">](https://htmlpreview.github.io/?https://raw.githubusercontent.com/HmedNejjar/Nova/main/Metrics/Phase%203/accuracy_metrics%20phase%203.html)
- 
-Metrics here are computed only over assistant-turn tokens (everything else is loss-masked), so they reflect how well Nova learned to produce replies in the `<|user|>` / `<|assistant|>` chat format rather than raw next-token prediction over free text.
-
-## Vision
-
-The long-term goal of Nova is to develop a fully functional conversational language model while exploring the complete lifecycle of an LLM:
-
-```
-Raw Text
-   ↓
-Tokenization
-   ↓
-Pretraining
-   ↓
-Knowledge Expansion
-   ↓
-Instruction Tuning
-   ↓
-Conversational AI
+```text
+Nova/
+├── GPT/
+│   ├── LoRA.py          # LoRALinear implementation
+│   ├── Nova.py          # NovaLM + LoRA parameter freezing + generation/chat
+│   ├── attention.py     # Multi-head attention + Q/V LoRA integration
+│   ├── datasets.py      # Vocabulary and chat datasets
+│   ├── decoder.py       # Transformer decoder blocks
+│   └── train.py         # LoRA training, checkpointing and metrics
+│
+├── Metrics/             # Training/evaluation outputs
+├── Preprocess/          # BPE tokenizer and preprocessing assets
+├── config.yaml          # Model, LoRA and training configuration
+└── test.py              # Interactive inference
 ```
 
-## Why Nova?
+## Installation
 
-Many AI systems are used without understanding what happens underneath. Nova is an attempt to bridge that gap by building the components from the ground up and exploring the ideas behind modern language models through implementation.
+```bash
+git clone https://github.com/HmedNejjar/Nova.git
+cd Nova
+git checkout Nova-QV-LoRA
 
-## Status
+pip install torch pyyaml tqdm plotly safetensors
+```
 
-⚠️ Nova is still under active development.
+CUDA is recommended for training.
 
-The repo already includes the core building blocks for a decoder-only transformer: custom BPE tokenization, RoPE-based attention, KV-cached generation, chat-format training data handling, and a training/evaluation loop with metric logging. However, this is not a finished or benchmarked production model, and the current implementation is best treated as an experimental research project.
+## Why Q/V LoRA?
 
-Future work may include further dataset refinement, longer training runs, tuning of the chat objective, and architectural experiments. The project is functional as a learning/codebase prototype, but it is still evolving.
+Attention projections are natural places to test parameter-efficient adaptation because they directly control how information is selected and represented during attention.
 
-### ⚠️ Note:
-Nova is currently a small model, so don't expect GPT-4-level output — some incoherent, repetitive, or factually wrong responses are normal at this scale. The point of this project is the pipeline and the implementation, not chart-topping benchmarks.
+This branch therefore keeps the pretrained language model intact and learns a small number of additional parameters in the Query and Value paths instead of updating the full model.
+
+That gives Nova a clean experimental setup for comparing:
+
+```text
+Full fine-tuning
+        vs.
+Q/V LoRA fine-tuning
+```
+
+while keeping the base architecture unchanged.
+
+## Branch Scope
+
+This branch is specifically focused on **Q/V LoRA adaptation of Nova**. It is not a new base architecture; it is an experimental fine-tuning path built on top of the existing Nova Transformer.
+
+## Notes on Reproducibility
+
+The repository currently contains both vocabulary and chat dataloaders. The training script constructs the chat datasets, but the final call to the training loop passes the vocabulary dataloaders. Consequently, anyone reproducing the branch should inspect the dataloader tuple in `GPT/train.py` before assuming that `train.jsonl` / `test.jsonl` are the datasets actually used for the optimization step.
+
+## License
+
+See the repository for the project's licensing information.
+
+---
+
+**Nova-QV-LoRA — parameter-efficient adaptation of a Transformer built from scratch.**
