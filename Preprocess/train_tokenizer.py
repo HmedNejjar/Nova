@@ -8,11 +8,11 @@ PARENT_FOLDER = Path(__file__).parent.parent
 def main():
     # Load the configuration from a YAML file
     with open(PARENT_FOLDER / Path("config.yaml"), "r") as f:
-        config = yaml.safe_load(f)
+        config = yaml.safe_load(f)["Tokenizer"]
 
-    vocab_size = config["Tokenizer"]["vocab_size"]
-    savepath = Path(config["Tokenizer"]["savepath"])
-    corpus_path = Path(config["Tokenizer"]["corpus_path"])
+    vocab_size = int(config["vocab_size"])
+    savepath = Path(config["savepath"])
+    corpus_path = Path(config["corpus_path"])
 
     # Read the corpus from the specified file
     with open(corpus_path, "r", encoding="utf-8") as f:
