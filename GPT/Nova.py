@@ -5,23 +5,63 @@ sys.path.insert(1, str(ROOT))
 
 import torch
 from torch import nn, Tensor
-from GPT.decoder import Decoder
+from GPT.decoder import RMSNorm, Decoder
 from Preprocess.tokenizer import BPE
 
 class NovaLM(nn.Module):
-    def __init__(self, tokenizer: BPE, vocab_size: int, embed_dim: int, num_layers: int, num_heads: int, max_seq_len: int, rope_base: int, dropout: float) -> None:
-        super().__init__()
-        self.embed_dim = embed_dim
-        self.max_seq_len = max_seq_len
-        self.tokenizer = tokenizer
-        # integer token IDs -> dense vectors
-        self.token_embedding = nn.Embedding(vocab_size, embed_dim)
-        self.decoder = Decoder(embed_dim, num_layers, num_heads, max_seq_len, rope_base, dropout)
+    def __init__(self, config: dict) -> None:
+        """
+        Args:
+            tokenizer: An instance of the BPE tokenizer.
+            config: A dictionary containing model and tokenizer hyperparameters:
+                -vocab_size: int
+                -embed_dim: int
+                -num_layers: int
+                -num_heads: int
+                -head_dim: int
+                -num_kv_heads: int
+                -max_seq_len: int
+                -hidden_dim: int
+                -rope_base: int
+                -dropout: float
+                -eps: float
+                -bias: bool
+        """
         
-        # pre-final-projection norm
-        self.final_norm = nn.LayerNorm(embed_dim)
-        # hidden vectors -> vocab-sized logits
-        self.lm_head = nn.Linear(embed_dim, vocab_size, bias = False)
+        super().__init__()
+        model_config = config["Model"]
+        tokenizer_config = config["Tokenizer"]
+        tokenizer_path = tokenizer_config["savepath"]
+        
+        self.vocab_size = tokenizer_config["vocab_size"]
+        
+        self.embed_dim = model_config["embed_dim"]
+        self.num_layers = model_config["num_layers"]
+        self.num_heads = model_config["num_heads"]
+        self.head_dim = model_config["head_dim"]
+        self.num_kv_heads = model_config["num_kv_heads"]
+        self.max_seq_len = model_config["max_seq_len"]
+        self.hidden_dim = model_config["hidden_dim"]
+        self.rope_base = int(model_config["rope_base"])
+        self.dropout = float(model_config["dropout"])
+        self.eps = float(model_config["eps"])
+        self.bias = bool(model_config["bias"])
+        
+        # Configure model tokenizer
+        self.tokenizer = BPE(self.vocab_size, tokenizer_path)
+        
+        # Token embedding layer
+        self.token_embedding = nn.Embedding(self.vocab_size, self.embed_dim)
+        
+        # Decoder blocks
+        self.decoder = Decoder(self.embed_dim, self.num_layers, self.num_heads, self.head_dim, self.num_kv_heads, self.max_seq_len, self.hidden_dim, self.rope_base, self.dropout, self.eps)
+        
+        # Final normalization layer
+        self.final_norm = RMSNorm(d_model=self.embed_dim, eps=self.eps)
+        
+        # Language modeling head (embed_dim -> vocab_size)
+        self.lm_head = nn.Linear(self.embed_dim, self.vocab_size, bias= self.bias)
+        
         # Weight tying
         self.lm_head.weight = self.token_embedding.weight
         

@@ -1,43 +1,48 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from torch import Tensor
-from GPT.attention import BatchedMultiHeadAttention
+from GPT.attention import GroupedQueryAttention as GQA
+
+class RMSNorm(nn.Module):
+    def __init__(self, d_model: int, eps: float = 1e-6):
+        super().__init__()
+        self.eps = float(eps)
+        self.scale = nn.Parameter(torch.ones(d_model))
+        
+    def forward(self, X: Tensor) -> Tensor:
+        # Formula for RMSNorm: x / sqrt(mean(x²) + eps)
+        norm = torch.rsqrt(X.pow(2).mean(dim=-1, keepdim=True) + self.eps)
+        return self.scale * X * norm
 
 class DecoderBlock(nn.Module):
-    def __init__(self, embed_dim: int, num_heads: int, max_seq_len: int, rope_base: int, dropout: float) -> None:
+    def __init__(self, embed_dim: int, num_heads: int, head_dim: int, num_kv_heads: int, max_seq_len: int, hidden_dim: int, rope_base: int = 10_000, dropout: float = 0.1, eps: float = 1e-6, bias: bool = False) -> None:
         super().__init__()
         
-        self.embed_dim = embed_dim
-        self.num_heads = num_heads
-        self.max_seq_len = max_seq_len
-        self.dropout = nn.Dropout(p=dropout)
+        self.attn_norm = RMSNorm(d_model= embed_dim, eps= eps)
+        self.ffn_norm = RMSNorm(d_model= embed_dim, eps= eps)
+        self.gqa = GQA(embed_dim, num_heads, head_dim, num_kv_heads, max_seq_len, rope_base, bias)
         
-        hidden_dim = int(2 * (4 * embed_dim) / 3)
+        # SwiGLU Linear layers
+        self.gate_proj = nn.Linear(embed_dim, hidden_dim, bias= bias)
+        self.up_proj = nn.Linear(embed_dim, hidden_dim, bias= bias)
+        self.down_proj = nn.Linear(hidden_dim, embed_dim, bias= bias)
+
+        self.dropout = nn.Dropout(dropout)
         
-        # Linear functions for FFN computation
-        self.linear1 = nn.Linear(embed_dim, hidden_dim) # Gate projection
-        self.linear2 = nn.Linear(hidden_dim, embed_dim) # project back to embed_dim
-        self.linear3 = nn.Linear(embed_dim, hidden_dim) # Value projection
-        
-        # LayerNorms for pre-attention and pre-FFN
-        self.norm1 = nn.LayerNorm(embed_dim)
-        self.norm2 = nn.LayerNorm(embed_dim)
-        
-        # Batched MHA instance
-        self.MultiHeadAttention = BatchedMultiHeadAttention(embed_dim= embed_dim, num_heads= num_heads, max_seq_len= max_seq_len, rope_base= rope_base)
         
     def forward(self, X: Tensor, cache: dict | None = None) -> tuple[Tensor, dict]:
-        # 1. Normalize X
-        X_norm = self.norm1(X)
+        # 1. Pre-Attention normalization
+        X_norm = self.attn_norm(X)
         
-        # 2. Apply Multi-Head Attention
-        attn_out, new_cache = self.MultiHeadAttention(X_norm, cache)
+        # 2. Apply GQA
+        attn_out, new_cache = self.gqa(X_norm, cache)
         
         # 3. Add residual connection with dropout
         X = X + self.dropout(attn_out)
         
-        # 4. Normalize again
-        X_norm = self.norm2(X)
+        # 4. Pre-FFN normalization
+        X_norm = self.ffn_norm(X)
         
         # 5. Apply FFN
         ffn_out = self.FFN_SwiGLU(X_norm)
@@ -49,28 +54,23 @@ class DecoderBlock(nn.Module):
     
     def FFN_SwiGLU(self, x: Tensor) -> Tensor:
         """
-        Feed ForwarD Network with SwiGLU activation function.
+        Feed Forward Network with SwiGLU activation function.
 
         Args:
-            x: Input tensor of shape (batch_size, seq_len T, embed_dim d)
+            x: Input tensor of shape (batch_size, seq_len, embed_dim )
         Returns:
-            Tensor of shape (batch_size, seq_len T, embed_dim d) after applying SwiGLU
+            Tensor of shape (batch_size, seq_len , embed_dim ) after applying SwiGLU
         """
-        gate = self.linear1(x)
-        swish = gate * torch.sigmoid(gate)
-        value = self.linear3(x)
-        
-        swiglu = swish * value
-        
-        return self.linear2(swiglu)
+        gated = F.silu(self.gate_proj(x)) * self.up_proj(x)
+        return self.down_proj(gated)
 
 class Decoder(nn.Module):
-    def __init__(self, embed_dim: int, num_layers: int, num_heads: int, max_seq_len: int, rope_base: int, dropout: float) -> None:
+    def __init__(self, embed_dim: int, num_layers: int, num_heads: int, head_dim: int, num_kv_heads: int, max_seq_len: int, hidden_dim: int, rope_base: int = 10_000, dropout: float = 0.1, eps: float = 1e-6, bias: bool = False) -> None:
         super().__init__()
         
         self.num_layers = num_layers
         
-        self.blocks = nn.ModuleList(DecoderBlock(embed_dim= embed_dim, num_heads= num_heads, max_seq_len= max_seq_len, rope_base= rope_base, dropout= dropout)
+        self.blocks = nn.ModuleList(DecoderBlock(embed_dim, num_heads, head_dim, num_kv_heads, max_seq_len, hidden_dim, rope_base, dropout, eps, bias)
                                     for _ in range(num_layers))
         
     def forward(self, X: Tensor, cache_list: list[dict] | None) -> tuple[Tensor, list[dict]]:
