@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.nn.attention.flex_attention import BlockMask
 from torch import Tensor
 from GPT.attention import GroupedQueryAttention as GQA
 

@@ -5,8 +5,9 @@ sys.path.insert(1, str(ROOT))
 
 import torch
 from torch import nn, Tensor
+
 from GPT.decoder import RMSNorm, Decoder
-from Preprocess.tokenizer import BPE
+from Preprocess.Tokenizer.tokenizer import BPE
 
 class NovaLM(nn.Module):
     def __init__(self, config: dict) -> None:
@@ -46,7 +47,8 @@ class NovaLM(nn.Module):
         self.dropout = float(model_config["dropout"])
         self.eps = float(model_config["eps"])
         self.bias = bool(model_config["bias"])
-        
+
+
         # Configure model tokenizer
         self.tokenizer = BPE(self.vocab_size, tokenizer_path)
         
@@ -54,7 +56,7 @@ class NovaLM(nn.Module):
         self.token_embedding = nn.Embedding(self.vocab_size, self.embed_dim)
         
         # Decoder blocks
-        self.decoder = Decoder(self.embed_dim, self.num_layers, self.num_heads, self.head_dim, self.num_kv_heads, self.max_seq_len, self.hidden_dim, self.rope_base, self.dropout, self.eps)
+        self.decoder = Decoder(self.embed_dim, self.num_layers, self.num_heads, self.head_dim, self.num_kv_heads, self.max_seq_len, self.hidden_dim, self.rope_base, self.dropout, self.eps, self.bias)
         
         # Final normalization layer
         self.final_norm = RMSNorm(d_model=self.embed_dim, eps=self.eps)

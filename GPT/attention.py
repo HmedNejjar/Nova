@@ -27,13 +27,14 @@ class GroupedQueryAttention(nn.Module):
         self.k_proj = nn.Linear(embed_dim, num_kv_heads * self.head_dim, bias= bias)
         self.v_proj =  nn.Linear(embed_dim, num_kv_heads * self.head_dim, bias= bias)
         
+        
         # Initialize RoPE instance
         self.rope = RoPE(head_dim=self.head_dim, max_seq_len=max_seq_len, base= rope_base)
         
         #Computation of attention output
         self.out_proj = nn.Linear(embed_dim, embed_dim, bias= bias)
         
-    def forward(self, X: Tensor, cache: dict | None = None) -> tuple[Tensor, dict]:
+    def forward(self, X: Tensor, cache: dict | None = None) -> tuple[Tensor, dict | None]:
         """
         Args:
             X: Input tensor of shape (batch_size, seq_len T, embed_dim d)
@@ -66,11 +67,7 @@ class GroupedQueryAttention(nn.Module):
             K = torch.cat([cache["K"], K], dim= 2) # Concat on seq_len dimension
             V = torch.cat([cache["V"], V], dim= 2) # Concat on seq_len dimension
             
-        new_cache = {'K': K,
-                     'V': V}
-        
-        # Compute score
-        scores: Tensor = (Q @ K.transpose(-2, -1)) / self.head_dim ** 0.5
+        new_cache = None if self.training else {"K": K, "V": V}
         
         # Apply a causal mask that accounts for cached keys.
         Q_len = Q.size(2)
