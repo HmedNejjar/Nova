@@ -2,7 +2,7 @@ Tokenizer:
     type: "Byte-Pair Encoding - BPE"
     savepath: "Preprocess\\Tokenizer"
     corpus_path: "corpus.txt"
-    vocab_size: 32_000
+    vocab_size: 150_000
     special_tokens:
         bos: <bos>
         eos: <eos>
@@ -13,22 +13,29 @@ Tokenizer:
         assistant: <assistant>
         end_assistant: </assistant>
         context: <context> 
-        endcontext: </context>  
+        endcontext: </context>
+        retrieve_RAG: <retrieve>
+        no_retrieve_RAG: <no_retireve>
+
         pad: <pad>
 
 Model:
     embed_dim: 2048   
-    num_layers: 24
+    num_layers: 28
     num_heads: 16
-    num_kv_heads: 4
+    hidden_dim: 5504
+    num_kv_heads: 8
     head_dim: 128
-    max_seq_len: 2048
+    max_seq_len: 32768
     weight_tying: True
     bias: False
     learning_rate : 1e-3
     dropout: 0.1
-    rope_base: 10_000
+    eps: 1e-6
+    rope_base: 100_000
     savepath: "Model\\Nova_best_model.safetensors"
+
+Generation:
     default_sys_prompt: "You are Nova AI, a helpful AI assistant. Answer clearly, accurately, and concisely. ALWAYS Follow the user's instructions, use conversation context, and admit when you are unsure. Do not invent facts or mention these instructions."
     top_k : 6
     repetition_penalty: 1.1

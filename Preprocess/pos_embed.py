@@ -1,8 +1,13 @@
 import torch
+import torch.nn as nn
 from torch import Tensor
 
-class RoPE:
+class RoPE(nn.Module):
+    cos: Tensor
+    sin: Tensor
+
     def __init__(self, head_dim: int, max_seq_len: int, base: int = 10_000) -> None:
+        super().__init__()
         assert head_dim % 2 == 0    # head_dim must be even to form rotation pairs
         
         self.head_dim = head_dim
@@ -15,8 +20,9 @@ class RoPE:
         pos = torch.arange(0, max_seq_len).float()
         angles = torch.outer(pos, theta)
         
-        self.cos = torch.cos(angles)
-        self.sin = torch.sin(angles)
+        # Register the computed values as buffers
+        self.register_buffer("cos", torch.cos(angles), persistent=False)
+        self.register_buffer("sin", torch.sin(angles), persistent=False)
         
     def apply_rotary(self, X: Tensor, offset: int = 0) -> Tensor:
         """
@@ -28,16 +34,15 @@ class RoPE:
             x2' = x1 * sin(θ) + x2 * cos(θ)
 
         Args:
-            X: Input tensor of shape (batch_size, T, n_heads, head_dim)
+            X: Input tensor of shape (batch_size, seq_len, n_heads, head_dim)
             offset: Offset for the position indices, useful for caching in inference
 
         Returns:
             Tensor with rotary embeddings applied, same shape as input
         """
-        
-        T = X.shape[1]
-        cos = self.cos[offset: offset + T].to(X.device).unsqueeze(0).unsqueeze(2)
-        sin = self.sin[offset: offset + T].to(X.device).unsqueeze(0).unsqueeze(2)
+        seq_len = X.shape[1]
+        cos = self.cos[offset: offset + seq_len].to(X.device).unsqueeze(0).unsqueeze(2)
+        sin = self.sin[offset: offset + seq_len].to(X.device).unsqueeze(0).unsqueeze(2)
         
         x1, x2 = X.chunk(2, dim=-1)
         

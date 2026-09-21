@@ -194,7 +194,7 @@ class BPE:
     
     def _special_tokens(self) -> tuple:
         """Return a tuple of special tokens used in the tokenizer."""
-        return ("<bos>", "<eos>", "<system>", "</system>", "<user>", "</user>", "<assistant>", "</assistant>", "<context>", "</context>", "<pad>", "<unk>")
+        return ("<bos>", "<eos>", "<system>", "</system>", "<user>", "</user>", "<assistant>", "</assistant>", "<context>", "</context>", "<retrieve>", "<no_retrieve>", "<pad>", "<unk>")
     
 
 if __name__ == "__main__":
