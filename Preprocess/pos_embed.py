@@ -49,4 +49,4 @@ class RoPE(nn.Module):
         x1_rot = x1 * cos - x2 * sin
         x2_rot = x1 * sin + x2 * cos
         
-        return torch.cat([x1_rot, x2_rot], dim=-1)
+        return torch.cat([x1_rot, x2_rot], dim=-1).type_as(X)
