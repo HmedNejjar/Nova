@@ -79,6 +79,12 @@ class NovaLM(nn.Module):
         
         return (logits, new_cache_list)
     
+    @property
+    def parameter_summary(self) -> str:
+        summary = "\n".join(f"Parameter {name}: {value}" for name, value in vars(self).items() if not name.startswith("_"))
+        total_params = sum(parameter.numel() for parameter in self.parameters())
+        return f"{summary}\nTotal parameters: {total_params}"
+    
     @torch.no_grad()
     def generate(self, prompt: str, temperature: float, top_k: int, repetition_penalty: float, max_new_tokens: int, device: str) -> str:
         """
