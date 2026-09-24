@@ -1,8 +1,10 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.nn.attention.flex_attention import BlockMask
+from typing import cast
 from torch import Tensor
+from torch.utils.checkpoint import checkpoint
+
 from GPT.attention import GroupedQueryAttention as GQA
 
 class RMSNorm(nn.Module):
@@ -77,10 +79,15 @@ class Decoder(nn.Module):
     def forward(self, X: Tensor, cache_list: list[dict] | None) -> tuple[Tensor, list[dict]]:
         new_cache_list = []
         
+        use_checkpoint = self.training and cache_list is None
+        
         for i, block in enumerate(self.blocks):
             layer_cache = cache_list[i] if cache_list is not None else None
             
-            X, new_cache = block(X, layer_cache)
+            if use_checkpoint:
+                X, new_cache = cast(tuple[Tensor, dict], checkpoint(block, X, layer_cache, use_reentrant=False),)
+            else:
+                X, new_cache = block(X, layer_cache)
             new_cache_list.append(new_cache)
                 
         return (X, new_cache_list)
