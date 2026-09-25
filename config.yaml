@@ -15,7 +15,7 @@ Tokenizer:
         context: <context> 
         endcontext: </context>
         retrieve_RAG: <retrieve>
-        no_retrieve_RAG: <no_retireve>
+        no_retrieve_RAG: <no_retrieve>
 
         pad: <pad>
 
