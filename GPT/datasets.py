@@ -48,7 +48,7 @@ class Phase_1_2_Dataset(IterableDataset):
         """
         self.epoch = epoch
         
-    def _worker_shard_list(self, rng: np.random.Generator) -> list:
+    def _worker_shard_list(self) -> list:
         """
         Decides which shards this DataLoader worker should read.
 
@@ -57,22 +57,17 @@ class Phase_1_2_Dataset(IterableDataset):
           2. If running inside a DataLoader worker, take every `num_workers`-th
              shard: worker 0 gets indices 0, N, 2N, ...; worker 1 gets
              1, N+1, 2N+1, ...; etc.
-
-        If `shuffle=True`, each worker calls this with a *different* RNG because
-        `__iter__` seeds the RNG with `worker_id`. Therefore each worker shuffles
-        the full shard list differently before slicing. That means the workers
-        are not guaranteed to receive disjoint sets of shards; some shards may be
-        duplicated and others skipped. If strict disjoint coverage is required,
-        shuffle once with a shared seed before slicing, or slice first and then
-        shuffle only within the worker's assigned shards.
         """
         
         shards = list(self.manifest.shards)
         if self.shuffle:
-            rng.shuffle(shards)
+            # Shared shuffle seed, so all workers see the same
+            # shuffled order, then each worker takes its disjoint slice.
+            shard_rng = np.random.default_rng(self.seed + self.epoch * 1000)
+            shard_rng.shuffle(shards)
         info = get_worker_info()
         if info is not None:
-            # Split shards across workers.
+            # Each worker takes every num_workers-th shard, starting at info.id.
             shards = shards[info.id::info.num_workers]
         return shards
     
@@ -101,19 +96,19 @@ class Phase_1_2_Dataset(IterableDataset):
     def __iter__(self):
         info = get_worker_info()
         worker_id = info.id if info is not None else 0
-        rng = np.random.default_rng(self.seed + self.epoch * 1000 + worker_id)
- 
-        shards = self._worker_shard_list(rng)
+        block_rng = np.random.default_rng(self.seed + self.epoch * 1000 + worker_id)
+
+        shards = self._worker_shard_list()
         buf = []
         for entry in shards:
             tokens, bpos, bptr = self._load_shard(entry)
-            buf.append(self._shard_block(tokens, bpos, bptr, rng))
+            buf.append(self._shard_block(tokens, bpos, bptr, block_rng))
             if len(buf) < self.shuffle_buffer_shards:
                 continue
-            yield from self._drain(buf, rng)
+            yield from self._drain(buf, block_rng)
             buf = []
         if buf:
-            yield from self._drain(buf, rng)
+            yield from self._drain(buf, block_rng)
  
     def _drain(self, shard_blocks_list: list, rng: np.random.Generator):
         """
