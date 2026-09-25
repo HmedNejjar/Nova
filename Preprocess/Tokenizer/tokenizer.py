@@ -5,7 +5,7 @@ from tokenizers import Tokenizer, models, trainers, pre_tokenizers
 class BPE:
     
     # Define special tokens
-    SPECIAL_TOKENS = ("<bos>", "<eos>", "<system>", "</system>", "<user>", "</user>", "<assistant>", "</assistant>", "<context>", "</context>", "<retrieve>", "<no_retrieve>", "<pad>", "<unk>")
+    SPECIAL_TOKENS = ("<bos>", "<eos>", "<system>", "</system>", "<user>", "</user>", "<assistant>", "</assistant>", "<thinking>", "</thinking>", "<pad>", "<unk>")
     
     def __init__(self, vocab_size: int, savepath: str | Path) -> None:
         self.vocab_size = vocab_size

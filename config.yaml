@@ -12,10 +12,8 @@ Tokenizer:
         end_user: </user>
         assistant: <assistant>
         end_assistant: </assistant>
-        context: <context> 
-        endcontext: </context>
-        retrieve_RAG: <retrieve>
-        no_retrieve_RAG: <no_retrieve>
+        thinking: <thinking> 
+        end_thinking: </thinking>
 
         pad: <pad>
 
