@@ -10,11 +10,8 @@ class GroupedQueryAttention(nn.Module):
             raise ValueError("embed_dim must equal num_heads * head_dim")
         if num_heads % num_kv_heads != 0:
             raise ValueError("num_heads must be divisible by num_kv_heads")
-        self.num_heads = num_heads
-        self.num_kv_heads = num_kv_heads
-        self.head_dim = head_dim
-        self.kv_repeat = num_heads // num_kv_heads
-        self.dropout = dropout
+        self.num_heads, self.num_kv_heads, self.head_dim = num_heads, num_kv_heads, head_dim
+        self.kv_repeat, self.dropout = num_heads // num_kv_heads, dropout
         self.q_proj = nn.Linear(embed_dim, num_heads * head_dim, bias=bias)
         self.k_proj = nn.Linear(embed_dim, num_kv_heads * head_dim, bias=bias)
         self.v_proj = nn.Linear(embed_dim, num_kv_heads * head_dim, bias=bias)
@@ -36,10 +33,15 @@ class GroupedQueryAttention(nn.Module):
             v = torch.cat((past_key_value[1], v), dim=-2)
         present = (k, v) if use_cache else None
         k, v = self._repeat_kv(k), self._repeat_kv(v)
-        # SDPA provides an efficient CUDA attention kernel on supported PyTorch/A100 builds.
-        y = torch.nn.functional.scaled_dot_product_attention(
-            q, k, v, dropout_p=self.dropout if self.training else 0.0,
-            is_causal=(past_key_value is None)
-        )
+        # With a KV cache, every new query must attend to the entire cached prefix.
+        # SDPA's is_causal=True is only used for the full-sequence training case.
+        if past_key_value is None:
+            y = torch.nn.functional.scaled_dot_product_attention(
+                q, k, v, dropout_p=self.dropout if self.training else 0.0, is_causal=True
+            )
+        else:
+            y = torch.nn.functional.scaled_dot_product_attention(
+                q, k, v, dropout_p=self.dropout if self.training else 0.0, is_causal=False
+            )
         y = y.transpose(1, 2).contiguous().view(b, t, self.num_heads * self.head_dim)
         return self.out_proj(y), present
