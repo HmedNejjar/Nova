@@ -16,6 +16,8 @@ class Phase_1_2_ShardManifest:
             
         self.seq_len = self.data["seq_len"]
         self.shards = self.data["shards"] # list of {shard, num_block, seq_len...}
+        # Phase 2 blocks are <pad>-filled after the last doc; Phase 1 blocks have no padding
+        self.pad_id = self.data.get("pad_id")
         
     def shard_path(self, prefix: str) ->  tuple:
         return (self.split_dir / f"{prefix}_tokens.npy",
@@ -31,6 +33,7 @@ class Phase_1_2_Dataset(IterableDataset):
         super().__init__()
         self.manifest = Phase_1_2_ShardManifest(split_dir)
         self.seq_len  = self.manifest.seq_len
+        self.pad_id = self.manifest.pad_id
         self.shuffle = shuffle
         
         # How many shards to load before flattening and shuffling their blocks.
@@ -127,22 +130,71 @@ class Phase_1_2_Dataset(IterableDataset):
     
     def collate(self, batch: list) -> dict:
         """
-        Turns a list of samples into a training batch.
+        Collates a batch of packed blocks into tensors for causal LM training.
 
-        Input samples contain both `input_ids` and `boundaries`, but this
-        collate function currently returns only `input_ids` and `labels`.
-        The `boundaries` are therefore discarded here.
-
-        Label creation is standard causal-LM next-token prediction:
-            labels[:, :-1] = input_ids[:, 1:]
-            labels[:, -1]  = -100  (ignored by CrossEntropyLoss)
+        Each block may contain multiple documents concatenated together.
+        This method:
+          1. Shifts input_ids to create next-token prediction labels.
+          2. Resets position_ids to 0 at each document boundary so RoPE
+             encodes intra-document positions only.
+          3. Builds a block-diagonal causal attention mask so tokens can
+             attend only to earlier tokens within the same document.
+          4. Masks out the label at each interior document boundary (-100)
+             to prevent the model from learning cross-document transitions.
+          5. Masks out the label on padding tokens (Phase 2 blocks are
+             <pad>-filled after their last document).
         """
         input_ids = torch.stack([b["input_ids"] for b in batch])  # (B, seq_len)
+        batch_size, seq_len = input_ids.shape
+        
+        # Initialize labels with -100 
         labels = torch.full_like(input_ids, fill_value=-100)
+        # Shift input_ids by 1 to the left for next-token prediction targets
         labels[:, :-1] = input_ids[:, 1:]
+        
+        # Create a 1D tensor of absolute sequence positions [0, 1, ..., seq_len-1]
+        positions = torch.arange(seq_len, device=input_ids.device)
+        # Create a standard lower-triangular causal mask (True = allowed to attend)
+        causal_mask = torch.tril(torch.ones((seq_len, seq_len), dtype=torch.bool, device=input_ids.device))
+        # Initialize tensors for document-local position IDs and attention masks
+        position_ids = torch.empty_like(input_ids)
+        attn_mask = torch.empty((batch_size, seq_len, seq_len), dtype=torch.bool, device=input_ids.device)
+        
+        for i, sample in enumerate(batch):
+            # Get document boundary offsets for the current sample
+            bounds = sample["boundaries"].to(device=input_ids.device, dtype=torch.long)
+            # Assign a document ID to each absolute position based on the boundaries.
+            doc_ids = torch.searchsorted(bounds, positions, right=True)
+            
+            # Get the starting absolute position of each document (prepends 0 for the first doc)
+            starts = torch.cat((bounds.new_zeros(1), bounds[:-1]))
+            
+            # Calculate local position IDs by subtracting the document's start offset.
+            # This resets the position ID to 0 at the beginning of each document.
+            position_ids[i] = positions - starts[doc_ids]
+            
+            # Create a block-diagonal causal attention mask:
+            # 1. (doc_ids[:, None] == doc_ids[None, :]) ensures tokens only attend to the SAME document.
+            # 2. & causal_mask ensures tokens only attend to PREVIOUS tokens (causal ordering).
+            attn_mask[i] = (doc_ids[:, None] == doc_ids[None, :]) & causal_mask
+            
+            # Find boundaries that are strictly inside the sequence (excluding 0 and seq_len)
+            interior_bounds = bounds[(bounds > 0) & (bounds < seq_len)]
+            
+            # Mask out the loss for the token immediately preceding each interior document boundary.
+            # This prevents the model from learning to predict the first token of Document B 
+            # from the last token of Document A, effectively enforcing document separation.
+            labels[i, interior_bounds - 1] = -100
+        
+        if self.pad_id is not None:
+            # Padding is neither an input to learn from nor a target to predict
+            labels[input_ids == self.pad_id] = -100
+            labels[labels == self.pad_id] = -100
         return {
             "input_ids": input_ids,
             "labels": labels,
+            "position_ids": position_ids,
+            "attn_mask": attn_mask,
         }
 
 class Phase_3_ShardManifest:
