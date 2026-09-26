@@ -67,6 +67,18 @@ class NovaLM(nn.Module):
         # Weight tying
         self.lm_head.weight = self.token_embedding.weight
         
+        self.apply(self._init_weights)
+        # scale down the projections feeding the residual stream
+        for name, p in self.named_parameters():
+            if name.endswith(("out_proj.weight", "down_proj.weight")):
+                nn.init.normal_(p, mean=0.0, std=0.02 / (2 * self.num_layers) ** 0.5)
+                
+    def _init_weights(self, module: nn.Module) -> None:
+        if isinstance(module, (nn.Linear, nn.Embedding)):
+            nn.init.normal_(module.weight, mean=0.0, std=0.02)
+        if isinstance(module, nn.Linear) and module.bias is not None:
+            nn.init.zeros_(module.bias)
+        
     def forward(self, X: Tensor, cache_list: list[dict] | None = None, position_ids: Tensor | None = None, attn_mask: Tensor | None = None) -> tuple[Tensor, list[dict]]:
         # Embedding the tokens into vectors
         X = self.token_embedding(X)
