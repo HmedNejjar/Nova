@@ -4,6 +4,7 @@ ROOT = Path(__file__).parent.parent
 sys.path.insert(1, str(ROOT))
 
 import json
+from typing import Generator
 import numpy as np
 import torch
 from torch.utils.data import IterableDataset, get_worker_info
@@ -29,7 +30,7 @@ class Phase_1_2_Dataset(IterableDataset):
     Yields dicts: {"input_ids": LongTensor(seq_len,), "boundaries": LongTensor(k,)}
     "boundaries" are local doc-end offsets within the block (0..seq_len),
     """
-    def __init__(self, split_dir: str | Path, shuffle: bool = True, shuffle_buffer_shards: int = 1, seed: int = 21, epoch: int = 0) -> None:
+    def __init__(self, split_dir: str | Path, shuffle: bool = True, shuffle_buffer_shards: int = 1, seed: int = 21, epoch: int = 0, skip_blocks: int = 0) -> None:
         super().__init__()
         self.manifest = Phase_1_2_ShardManifest(split_dir)
         self.seq_len  = self.manifest.seq_len
@@ -43,13 +44,17 @@ class Phase_1_2_Dataset(IterableDataset):
         
         self.seed = seed
         self.epoch = epoch
-        
+
+        # Blocks each worker skips at the start of this epoch (resuming mid-epoch).
+        self.skip_blocks = skip_blocks
+
     def set_epoch(self, epoch: int) -> None:
         """
         Changes the RNG seed used in __iter__ so each epoch gets a different
-        shuffle order.
+        shuffle order. The resume skip only applies to the epoch it was set for.
         """
         self.epoch = epoch
+        self.skip_blocks = 0
         
     def _worker_shard_list(self) -> list:
         """
@@ -102,31 +107,37 @@ class Phase_1_2_Dataset(IterableDataset):
         block_rng = np.random.default_rng(self.seed + self.epoch * 1000 + worker_id)
 
         shards = self._worker_shard_list()
+        to_skip = self.skip_blocks
         buf = []
         for entry in shards:
             tokens, bpos, bptr = self._load_shard(entry)
             buf.append(self._shard_block(tokens, bpos, bptr, block_rng))
             if len(buf) < self.shuffle_buffer_shards:
                 continue
-            yield from self._drain(buf, block_rng)
+            to_skip = yield from self._drain(buf, block_rng, to_skip)
             buf = []
         if buf:
-            yield from self._drain(buf, block_rng)
- 
-    def _drain(self, shard_blocks_list: list, rng: np.random.Generator):
+            yield from self._drain(buf, block_rng, to_skip)
+
+    def _drain(self, shard_blocks_list: list, rng: np.random.Generator, to_skip: int = 0) -> Generator[dict, None, int]:
         """
         Flattens buffered shards into one pool of blocks, optionally shuffles
-        the pool, and yields individual samples.
+        the pool, and yields individual samples. The first `to_skip` blocks are
+        dropped before any tensor is built; returns how many are still left to skip.
         """
-        
+
         pool = [item for shard_items in shard_blocks_list for item in shard_items]
         if self.shuffle:
             rng.shuffle(pool)
         for block, bounds in pool:
+            if to_skip > 0:
+                to_skip -= 1
+                continue
             yield {
                 "input_ids": torch.from_numpy(block.astype(np.int64)),
                 "boundaries": torch.from_numpy(bounds.astype(np.int64)),
             }
+        return to_skip
     
     def collate(self, batch: list) -> dict:
         """
@@ -221,8 +232,7 @@ class Phase3Dataset(IterableDataset):
       case_labels:  LongTensor(num_convs_in_block,)    -1/0/1/2, aligned with conv_bounds
     """
  
-    def __init__(self, split_dir: str | Path, shuffle: bool = True,
-                 shuffle_buffer_shards: int = 1, seed: int = 21, epoch: int = 0) -> None:
+    def __init__(self, split_dir: str | Path, shuffle: bool = True, shuffle_buffer_shards: int = 1, seed: int = 21, epoch: int = 0, skip_blocks: int = 0) -> None:
         super().__init__()
         self.manifest = Phase_3_ShardManifest(split_dir)
         self.seq_len = self.manifest.seq_len
@@ -230,10 +240,12 @@ class Phase3Dataset(IterableDataset):
         self.shuffle_buffer_shards = shuffle_buffer_shards
         self.seed = seed
         self.epoch = epoch
+        self.skip_blocks = skip_blocks
  
     def set_epoch(self, epoch: int) -> None:
         self.epoch = epoch
- 
+        self.skip_blocks = 0
+
     def _worker_shard_list(self) -> list:
         """Shuffle once with a seed shared across workers, THEN slice by
         worker — see module docstring for why order matters here."""
@@ -283,22 +295,27 @@ class Phase3Dataset(IterableDataset):
         block_rng = np.random.default_rng(self.seed + self.epoch * 1000 + worker_id + 1)
  
         shards = self._worker_shard_list()
+        to_skip = self.skip_blocks
         buf = []
         for entry in shards:
             tokens, convs, block_conv_ptr, spans = self._load_shard(entry)
             buf.append(self._block_items(tokens, convs, block_conv_ptr, spans, block_rng))
             if len(buf) < self.shuffle_buffer_shards:
                 continue
-            yield from self._drain(buf, block_rng)
+            to_skip = yield from self._drain(buf, block_rng, to_skip)
             buf = []
         if buf:
-            yield from self._drain(buf, block_rng)
- 
-    def _drain(self, shard_items_list: list, rng: np.random.Generator):
+            yield from self._drain(buf, block_rng, to_skip)
+
+    def _drain(self, shard_items_list: list, rng: np.random.Generator, to_skip: int = 0) -> Generator[dict, None, int]:
         pool = [item for shard_items in shard_items_list for item in shard_items]
         if self.shuffle:
             rng.shuffle(pool)
         for block, trainable, conv_bounds, case_labels in pool:
+            # resume: drop already-trained blocks before building any tensors
+            if to_skip > 0:
+                to_skip -= 1
+                continue
             tokens = block.astype(np.int64)
             labels = np.full(self.seq_len, -100, dtype=np.int64)
             # standard next-token shift, but only where the TARGET token is trainable
@@ -309,6 +326,7 @@ class Phase3Dataset(IterableDataset):
                 "conv_bounds": torch.tensor(conv_bounds, dtype=torch.long),
                 "case_labels": torch.tensor(case_labels, dtype=torch.long),
             }
+        return to_skip
  
  
 def collate(batch: list) -> dict:
@@ -344,4 +362,5 @@ def collate(batch: list) -> dict:
         "position_ids": position_ids,
         "attn_mask": attn_mask,  # (B, seq_len, seq_len) bool, True = attend
         "case_labels": [b["case_labels"] for b in batch],
+        "conv_bounds": [b["conv_bounds"] for b in batch]
     }
