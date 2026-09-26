@@ -34,12 +34,12 @@ class DecoderBlock(nn.Module):
         self.dropout = nn.Dropout(dropout)
         
         
-    def forward(self, X: Tensor, cache: dict | None = None) -> tuple[Tensor, dict]:
+    def forward(self, X: Tensor, cache: dict | None = None, position_ids: Tensor | None = None, attn_mask: Tensor | None = None) -> tuple[Tensor, dict]:
         # 1. Pre-Attention normalization
         X_norm = self.attn_norm(X)
         
         # 2. Apply GQA
-        attn_out, new_cache = self.gqa(X_norm, cache)
+        attn_out, new_cache = self.gqa(X_norm, cache, position_ids, attn_mask)
         
         # 3. Add residual connection with dropout
         X = X + self.dropout(attn_out)
@@ -76,7 +76,7 @@ class Decoder(nn.Module):
         self.blocks = nn.ModuleList(DecoderBlock(embed_dim, num_heads, head_dim, num_kv_heads, max_seq_len, hidden_dim, rope_base, dropout, eps, bias)
                                     for _ in range(num_layers))
         
-    def forward(self, X: Tensor, cache_list: list[dict] | None) -> tuple[Tensor, list[dict]]:
+    def forward(self, X: Tensor, cache_list: list[dict] | None, position_ids: Tensor | None = None, attn_mask: Tensor | None = None) -> tuple[Tensor, list[dict]]:
         new_cache_list = []
         
         use_checkpoint = self.training and cache_list is None
@@ -85,9 +85,9 @@ class Decoder(nn.Module):
             layer_cache = cache_list[i] if cache_list is not None else None
             
             if use_checkpoint:
-                X, new_cache = cast(tuple[Tensor, dict], checkpoint(block, X, layer_cache, use_reentrant=False),)
+                X, new_cache = cast(tuple[Tensor, dict], checkpoint(block, X, layer_cache, position_ids, attn_mask, use_reentrant=False),)
             else:
-                X, new_cache = block(X, layer_cache)
+                X, new_cache = block(X, layer_cache, position_ids, attn_mask)
             new_cache_list.append(new_cache)
                 
         return (X, new_cache_list)

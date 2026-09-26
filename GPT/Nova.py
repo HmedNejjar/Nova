@@ -67,11 +67,11 @@ class NovaLM(nn.Module):
         # Weight tying
         self.lm_head.weight = self.token_embedding.weight
         
-    def forward(self, X: Tensor, cache_list: list[dict] | None) -> tuple[Tensor, list[dict]]:
+    def forward(self, X: Tensor, cache_list: list[dict] | None = None, position_ids: Tensor | None = None, attn_mask: Tensor | None = None) -> tuple[Tensor, list[dict]]:
         # Embedding the tokens into vectors
         X = self.token_embedding(X)
         # Pass it through the decoder
-        X, new_cache_list = self.decoder(X, cache_list)
+        X, new_cache_list = self.decoder(X, cache_list, position_ids, attn_mask)
         # Normalization before logits computation
         X = self.final_norm(X)
         # Compute logits

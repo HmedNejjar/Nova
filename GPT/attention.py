@@ -5,7 +5,7 @@ sys.path.insert(1, str(ROOT))
 
 import torch
 import torch.nn as nn
-from torch.nn.functional import scaled_dot_product_attention as Flash_Attention
+from torch.nn.functional import scaled_dot_product_attention as SDPA
 from torch import Tensor
 
 from Preprocess.pos_embed import RoPE
@@ -34,7 +34,7 @@ class GroupedQueryAttention(nn.Module):
         #Computation of attention output
         self.out_proj = nn.Linear(embed_dim, embed_dim, bias= bias)
         
-    def forward(self, X: Tensor, cache: dict | None = None) -> tuple[Tensor, dict | None]:
+    def forward(self, X: Tensor, cache: dict | None = None, position_ids: Tensor | None = None, attn_mask: Tensor | None = None) -> tuple[Tensor, dict | None]:
         """
         Args:
             X: Input tensor of shape (batch_size, seq_len T, embed_dim d)
@@ -45,6 +45,9 @@ class GroupedQueryAttention(nn.Module):
             New cache containing all values of K and V
         """
         batch_size, seq_len, _ = X.shape
+
+        if attn_mask is not None and cache is not None:
+            raise NotImplementedError("attn_mask cannot be used together with a KV cache")
         
         # Compute Q, K, V
         Q = self.q_proj(X).view(batch_size, seq_len, self.num_heads, self.head_dim)
@@ -54,8 +57,8 @@ class GroupedQueryAttention(nn.Module):
         # Apply RoPE to Q and K
         offset = cache["K"].shape[2] if cache is not None else 0
         
-        Q = self.rope.apply_rotary(Q, offset= offset)
-        K = self.rope.apply_rotary(K, offset= offset)
+        Q = self.rope.apply_rotary(Q, position_ids, offset)
+        K = self.rope.apply_rotary(K, position_ids, offset)
         
         # Transpose Q, K, V
         Q = Q.transpose(1,2) # (batch_size, num_heads, seq_len, head_dim)
@@ -76,8 +79,11 @@ class GroupedQueryAttention(nn.Module):
         if past_len < 0:
             raise ValueError("kv_cache cannot contain fewer tokens than the current input")
         
-        if past_len == 0:
-            attn_out = Flash_Attention(Q, K, V, is_causal= True, enable_gqa= True)
+        if attn_mask is not None:
+            mask = attn_mask.unsqueeze(1)
+            attn_out = SDPA(Q, K, V, attn_mask=mask, enable_gqa=True)
+        elif past_len == 0:
+            attn_out = SDPA(Q, K, V, is_causal=True, enable_gqa=True)
         else:
             # With cached keys, queries start after the cached prefix, so the
             # built-in causal mask cannot represent their absolute positions.
@@ -88,7 +94,7 @@ class GroupedQueryAttention(nn.Module):
             
             # Use the explicit mask so cached tokens remain visible while future
             # tokens are still hidden.
-            attn_out = Flash_Attention(Q, K, V, attn_mask= causal_mask, enable_gqa= True)
+            attn_out = SDPA(Q, K, V, attn_mask= causal_mask, enable_gqa= True)
         
         # Transpose back and reshape
         attn_out = attn_out.transpose(1, 2).contiguous().view(batch_size, seq_len, self.embed_dim)
