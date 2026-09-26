@@ -1,8 +1,11 @@
 from pathlib import Path
 
-from tokenizers import Tokenizer, models, trainers, pre_tokenizers
+from tokenizers import Tokenizer, models, trainers, pre_tokenizers, decoders
 
 class BPE:
+    """
+    Lossless byte-level BPE tokenizer.
+    """
     
     # Define special tokens
     SPECIAL_TOKENS = ("<bos>", "<eos>", "<system>", "</system>", "<user>", "</user>", "<assistant>", "</assistant>", "<thinking>", "</thinking>", "<pad>", "<unk>")
@@ -18,11 +21,22 @@ class BPE:
         if self.tokenizer_path.exists():
             self.tokenizer = Tokenizer.from_file(str(self.tokenizer_path))
         else:
-            self.tokenizer = Tokenizer(models.BPE(unk_token= "<unk>", end_of_word_suffix= "</w>"))
-            self.tokenizer.pre_tokenizer = pre_tokenizers.Whitespace() # Splitting using "</w>" token
+            self.tokenizer = self._build_empty()
+    
+    @staticmethod   
+    def _build_empty() -> Tokenizer:
+        """
+        Build an empty tokenizer with default settings.
+        """
+        tokenizer = Tokenizer(models.BPE(unk_token= "<unk>"))
+        tokenizer.pre_tokenizer = pre_tokenizers.ByteLevel(add_prefix_space= False, use_regex=True)
+        tokenizer.decoder = decoders.ByteLevel()
+        
+        return tokenizer
+        
             
     def train(self, corpus_path: str | Path) -> None:
-        trainer = trainers.BpeTrainer(vocab_size=self.vocab_size, special_tokens=self._special_tokens(), show_progress=True)
+        trainer = trainers.BpeTrainer(vocab_size=self.vocab_size, special_tokens=self._special_tokens(), initial_alphabet=pre_tokenizers.ByteLevel().alphabet(), show_progress=True)
         
         # STREAMING: Yield lines one by one so RAM doesn't explode
         def file_iterator():
@@ -96,4 +110,3 @@ class BPE:
     def _special_tokens(self) -> list:
         """Compatibility method returning special tokens tuple."""
         return list(self.SPECIAL_TOKENS)
-        
