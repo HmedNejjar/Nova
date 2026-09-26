@@ -329,38 +329,38 @@ class Phase3Dataset(IterableDataset):
         return to_skip
  
  
-def collate(batch: list) -> dict:
-    """
-    Builds the block-diagonal causal attention mask and per-conversation
-    RoPE position_ids from each sample's conv_bounds. Padding positions
-    (outside every conv's range) get self-attention only — otherwise an
-    all-False mask row produces NaN in softmax; the -100 label already
-    keeps them out of the loss, this just keeps the forward pass clean.
- 
-    case_labels is left as a per-sample list (ragged — conversation count
-    varies per block), for slicing eval loss by RAG case later.
-    """
-    seq_len = batch[0]["input_ids"].shape[0]
-    B = len(batch)
- 
-    input_ids = torch.stack([b["input_ids"] for b in batch])
-    labels = torch.stack([b["labels"] for b in batch])
- 
-    causal = torch.tril(torch.ones(seq_len, seq_len, dtype=torch.bool))
-    attn_mask = torch.eye(seq_len, dtype=torch.bool).unsqueeze(0).repeat(B, 1, 1)
-    position_ids = torch.zeros(B, seq_len, dtype=torch.long)
- 
-    for i, b in enumerate(batch):
-        for start, end in b["conv_bounds"].tolist():
-            length = end - start
-            position_ids[i, start:end] = torch.arange(length)
-            attn_mask[i, start:end, start:end] |= causal[:length, :length]
- 
-    return {
-        "input_ids": input_ids,
-        "labels": labels,
-        "position_ids": position_ids,
-        "attn_mask": attn_mask,  # (B, seq_len, seq_len) bool, True = attend
-        "case_labels": [b["case_labels"] for b in batch],
-        "conv_bounds": [b["conv_bounds"] for b in batch]
-    }
+    def collate(self, batch: list) -> dict:
+        """
+        Builds the block-diagonal causal attention mask and per-conversation
+        RoPE position_ids from each sample's conv_bounds. Padding positions
+        (outside every conv's range) get self-attention only — otherwise an
+        all-False mask row produces NaN in softmax; the -100 label already
+        keeps them out of the loss, this just keeps the forward pass clean.
+    
+        case_labels is left as a per-sample list (ragged — conversation count
+        varies per block), for slicing eval loss by RAG case later.
+        """
+        seq_len = batch[0]["input_ids"].shape[0]
+        B = len(batch)
+    
+        input_ids = torch.stack([b["input_ids"] for b in batch])
+        labels = torch.stack([b["labels"] for b in batch])
+    
+        causal = torch.tril(torch.ones(seq_len, seq_len, dtype=torch.bool))
+        attn_mask = torch.eye(seq_len, dtype=torch.bool).unsqueeze(0).repeat(B, 1, 1)
+        position_ids = torch.zeros(B, seq_len, dtype=torch.long)
+    
+        for i, b in enumerate(batch):
+            for start, end in b["conv_bounds"].tolist():
+                length = end - start
+                position_ids[i, start:end] = torch.arange(length)
+                attn_mask[i, start:end, start:end] |= causal[:length, :length]
+    
+        return {
+            "input_ids": input_ids,
+            "labels": labels,
+            "position_ids": position_ids,
+            "attn_mask": attn_mask,  # (B, seq_len, seq_len) bool, True = attend
+            "case_labels": [b["case_labels"] for b in batch],
+            "conv_bounds": [b["conv_bounds"] for b in batch]
+        }
