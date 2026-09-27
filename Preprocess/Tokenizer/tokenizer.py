@@ -61,28 +61,15 @@ class BPE:
     def decode(self, token_ids: list[int], skip_special_tokens: bool = False) -> str:
         """
         Decode token IDs back into text.
+
+        Tokens are stored in byte-level form ("Ġ" = space, "Ċ" = newline,
+        multi-byte UTF-8 split across symbols), so they can't just be joined:
+        the tokenizer's ByteLevel decoder maps them back to the exact original
+        text, whitespace included.
         """
         if not token_ids:
             return ""
-
-        special_set = set(self.SPECIAL_TOKENS)
-        parts: list[str] = []
-
-        for tid in token_ids:
-            token = self.tokenizer.id_to_token(int(tid))
-            if token is None:
-                token = "<unk>"
-
-            if skip_special_tokens and token in special_set:
-                continue
-
-            if token in special_set:
-                parts.append(f" {token} ")
-            else:
-                parts.append(token)
-
-        text = "".join(parts).replace("</w>", " ")
-        return " ".join(text.split())
+        return self.tokenizer.decode([int(t) for t in token_ids], skip_special_tokens=skip_special_tokens)
     
     @property
     def vocab(self) -> dict[str, int]:
