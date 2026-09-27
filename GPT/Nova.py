@@ -79,16 +79,19 @@ class NovaLM(nn.Module):
         if isinstance(module, nn.Linear) and module.bias is not None:
             nn.init.zeros_(module.bias)
         
-    def forward(self, X: Tensor, cache_list: list[dict] | None = None, position_ids: Tensor | None = None, attn_mask: Tensor | None = None) -> tuple[Tensor, list[dict]]:
+    def forward(self, X: Tensor, cache_list: list[dict] | None = None, position_ids: Tensor | None = None, attn_mask: Tensor | None = None, return_hidden: bool = False) -> tuple[Tensor, list[dict]]:
         # Embedding the tokens into vectors
         X = self.token_embedding(X)
         # Pass it through the decoder
         X, new_cache_list = self.decoder(X, cache_list, position_ids, attn_mask)
         # Normalization before logits computation
         X = self.final_norm(X)
+        # Training computes lm_head + loss in chunks (Training/eval.py::chunked_lm_loss)
+        # so the full (batch_size, seq_len, vocab) logits never exist at once
+        if return_hidden:
+            return (X, new_cache_list)
         # Compute logits
         logits = self.lm_head(X)
-        
         return (logits, new_cache_list)
     
     @property
