@@ -17,10 +17,13 @@ from Training.utils import to_device
 from Training.metrics import MetricTracker, CaseTracker
 
 # Fixed prompts so samples are comparable from one eval to the next
+PHASE3_SYSTEM = ("You are Nova AI, a helpful AI assistant. Answer clearly, "
+                 "accurately, and concisely. Admit when you are unsure.")
+
 DEFAULT_PROMPTS = {
     1: ["The history of the city", "In mathematics, a prime number"],
     2: ["The history of the city", "def fibonacci(n):"],
-    3: ["<bos> <user> What is the capital of France? </user> <assistant>"],
+    3: [f"<bos><system>{PHASE3_SYSTEM}</system><user>What is the capital of France?</user><assistant>"],
 }
 
 # --------------------------------------------------------------------------- #
@@ -186,17 +189,14 @@ def evaluate(model: nn.Module, dl: DataLoader, max_batches: int, amp_dtype: torc
 def sample_generations(model: nn.Module, prompts: list[str], device: torch.device, max_new_tokens: int = 48) -> dict[str, str]:
     """Greedy continuations of fixed prompts, for a quick read on quality.
 
-    top_k=1 makes sampling greedy, so the same weights always give the same
+    temperature=0 decodes greedily, so the same weights always give the same
     text and changes between evals come from training, not randomness.
-    NovaLM.generate() switches the model to eval mode and leaves it there,
-    so the caller's mode is restored here.
+    NovaLM.generate() restores the model's train/eval mode itself.
     """
     was_training = model.training
     samples = {}
-    try:
+    
         for prompt in prompts:
-            samples[prompt] = model.generate(prompt, temperature=1.0, top_k=1, repetition_penalty=1.0,
-                                             max_new_tokens=max_new_tokens, device=str(device))
-    finally:
-        model.train(was_training)
+            samples[prompt] = model.generate(prompt, max_new_tokens=max_new_tokens, temperature=0.0, stop_tokens=("<eos>", "</assistant>"), device=device, return_prompt=False)
+
     return samples

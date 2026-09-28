@@ -30,7 +30,6 @@ Model:
     dropout: 0.0
     eps: 1.0e-6    
     rope_base: 100_000
-    savepath: "Model/Nova_best_model.safetensors"
 
 Generation:
     default_sys_prompt: "You are Nova AI, a helpful AI assistant. Answer clearly, accurately, and concisely. ALWAYS Follow the user's instructions, use conversation context, and admit when you are unsure. Do not invent facts or mention these instructions."
