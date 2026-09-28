@@ -120,7 +120,7 @@ class NovaLM(nn.Module):
         Returns:
             Decoded text.
         """
-        
+        assert max_new_tokens <= self.max_seq_len, "max_new_tokens must be <= max_seq_len"
         was_training = self.training
         self.eval()
         
@@ -160,7 +160,7 @@ class NovaLM(nn.Module):
                     break
                 
                 # Feed that token back through the model to get the next logits
-                hidden, cache = self.forward(torch.tensor([next_id], device=device), cache, return_hidden=True)
+                hidden, cache = self.forward(torch.tensor([[next_id]], device=device), cache, return_hidden=True)
                 
         finally:
             # Callers (e.g. eval during training) get the model back in the mode they left it
