@@ -35,6 +35,7 @@ class NovaLM(nn.Module):
         tokenizer_path = tokenizer_config["savepath"]
         
         self.vocab_size = tokenizer_config["vocab_size"]
+        self.special_tokens = tokenizer_config["special_tokens"]
         
         self.embed_dim = model_config["embed_dim"]
         self.num_layers = model_config["num_layers"]
@@ -101,126 +102,164 @@ class NovaLM(nn.Module):
         return f"{summary}\nTotal parameters: {total_params}"
     
     @torch.no_grad()
-    def generate(self, prompt: str, temperature: float, top_k: int, repetition_penalty: float, max_new_tokens: int, device: str) -> str:
+    def generate(self, prompt: str | list[int], max_new_tokens: int = 128, temperature: float = 1.0, top_k: int = 0, top_p: float = 1.0, repetition_penalty: float = 1.0,
+                 stop_tokens: tuple[str, ...] = ("<eos>",), device: str | torch.device | None = None, return_prompt: bool = True) -> str:
         """
-        Generate text given a prompt using temperature-scaled sampling and optional top-k filtering.
+        Autoregressive generation with a KV cache.
+
         Args:
-            prompt: Input string prompt.
-            temperature: Temperature for scaling logits before sampling.
-            top_k: Number of highest-probability tokens to keep before sampling.
-            max_new_tokens: Maximum number of new tokens to generate.
-            repetition_penalty: Penalty for repeating tokens.
-            device: Device to run inference on (e.g. 'cpu' or 'cuda').
+            prompt: Text, or token ids (chat() passes ids so nothing is re-tokenized).
+            max_new_tokens: Upper bound on generated tokens.
+            temperature: 0 = greedy (argmax); otherwise logits are divided by it before sampling.
+            top_k: Keep only the k most likely tokens (0 = off).
+            top_p: Nucleus sampling, keep the smallest set with cumulative prob >= top_p (1.0 = off).
+            repetition_penalty: >1 discourages tokens already in the prompt/output (1.0 = off).
+            stop_tokens: Special tokens that end generation; they are not included in the output.
+            device: Defaults to the model's device.
+            return_prompt: Include the prompt in the returned text (False = only the continuation).
         Returns:
-            Generated text as a string.
+            Decoded text.
         """
+        
+        was_training = self.training
         self.eval()
         
+        device = torch.device(device) if device is not None else next(self.parameters()).device
+        
         # Encode the prompt
-        input_ids = torch.tensor(self.tokenizer.encode(prompt)).unsqueeze(0).to(device)
+        input_ids = self.tokenizer.encode(prompt) if isinstance(prompt, str) else [int(token) for token in prompt]
         
-        cache_list = None
-        generated_ids = input_ids
-        EOS_ID = self.tokenizer.vocab["<eos>"]
+        if not input_ids:
+            raise ValueError("Cannot generate from empty prompt")
         
-        # First pass — getting full cache list and first logits
-        logits, cache_list = self.forward(generated_ids, cache_list)
+        # Positions past max_seq_len have no RoPE entry: keep the newest prompt tokens
+        input_ids = input_ids[-max(self.max_seq_len - max_new_tokens, 1):]
         
-        # Generation loop
-        for _ in range(max_new_tokens):
-            if generated_ids.shape[1] >= self.max_seq_len:
-                break
+        vocab = self.tokenizer.vocab
+        stop_token_ids = [vocab[token] for token in stop_tokens]
+        generated_ids = []
+        
+        try:
+            # Prefill: one pass over the prompt builds the cache; only the last position needs logits
+            hidden, cache = self.forward(torch.tensor(input_ids).unsqueeze(0).to(device), None, None, None, return_hidden=True)
             
-            # Get the next token scaled by temperature
-            next_token_logits = logits[:, -1, :].clone()
-            
-            # Apply repetition penalty
-            if repetition_penalty != 1.0:
-                for i in range(generated_ids.shape[0]):
-                    # Get all unique tokens seen so far (prompt + generated text)
-                    unique_tokens = torch.unique(generated_ids[i])
-                    
-                    # Extract their current logits
-                    selected_logits = next_token_logits[i, unique_tokens]
-                    
-                    # Apply penalty: divide if positive, multiply if negative
-                    selected_logits = torch.where(
-                        selected_logits > 0,
-                        selected_logits / repetition_penalty,
-                        selected_logits * repetition_penalty
-                    )
-                    
-                    # Write the penalized logits back into the tensor
-                    next_token_logits[i, unique_tokens] = selected_logits
-            
-            # Apply temperature scaling
-            if temperature > 0.0:
-                next_token_logits = next_token_logits / temperature
-            
-            if top_k > 0:
-                # Keep only the top_k highest logits and set all others to -inf.
-                # This implements top-k sampling by restricting the candidate tokens.
-                top_k_values, top_k_indices = torch.topk(next_token_logits, top_k, dim= -1)
-                filtered_logits = torch.full_like(next_token_logits, float('-inf'))
-                filtered_logits.scatter_(1, top_k_indices, top_k_values)
+            for _ in range(max_new_tokens):
+                # Compute logits for the last position and sample
+                logits = self.lm_head(hidden[:, -1]).float()[0]
                 
-                # Use the filtered logits for the next sampling step.
-                next_token_logits = filtered_logits
-            
-            # Convert logits to probabilities and sample one next token.
-            probs = torch.softmax(next_token_logits, dim= -1)
-            next_token = torch.multinomial(probs, num_samples= 1)
-            
-            generated_ids = torch.cat([generated_ids, next_token], dim= 1)
-            
-            # If EOS token is generated, stop generation
-            if next_token.item() == EOS_ID:
-                break
-            
-            # Forward pass to get logits for the next token
-            logits, cache_list = self.forward(next_token, cache_list)
-        
-        # Decode the generated token IDs back to text
-        generated_text = self.tokenizer.decode(generated_ids.squeeze(0).tolist())
-        return generated_text
-    
+                # Sample the next token from those logits
+                next_id = self._sample(logits, input_ids + generated_ids, temperature, top_k, top_p, repetition_penalty)
+                
+                # Check stop condition
+                if next_id in stop_token_ids:
+                    break
+                # Record the token we just generated
+                generated_ids.append(next_id)
+                
+                if len(input_ids) + len(generated_ids) >= max_new_tokens:
+                    break
+                
+                # Feed that token back through the model to get the next logits
+                hidden, cache = self.forward(torch.tensor([next_id], device=device), cache, return_hidden=True)
+                
+        finally:
+            # Callers (e.g. eval during training) get the model back in the mode they left it
+            self.train(was_training)
+
+        return self.tokenizer.decode((input_ids + generated_ids) if return_prompt else generated_ids)
+
+                
     @torch.no_grad()
-    def chat(self, messages: list[dict], temperature: float, top_k: int, repetition_penalty: float, max_new_tokens: int, device: str) -> str:
-        ROLE_TAGS = {"user": "<|user|>", "assistant": "<|assistant|>", "system": "<|system|>"}
-        max_prompt_len = max(self.max_seq_len - max_new_tokens, 1)
-    
-        # Keep system instructions separate so history can be trimmed first.
-        system_turns, convo_turns = [], []
-        for m in messages:
-            role = m.get("role", "user")
-            tag = ROLE_TAGS.get(role, "<|user|>")
-            encoded = self.tokenizer.encode(f"{tag} {m.get('content', '')} ")
-            (system_turns if role == "system" else convo_turns).append(encoded)
-    
-        assistant_lead_in = self.tokenizer.encode("<|assistant|> ")
-        bos_ids = self.tokenizer.encode("<bos> ")
-    
-        # Reserve space for BOS, system turns, and the assistant marker.
-        budget = max_prompt_len - len(bos_ids) - sum(len(t) for t in system_turns) - len(assistant_lead_in)
-        while convo_turns and sum(len(t) for t in convo_turns) > budget:
-            convo_turns.pop(0)
-    
-        prompt_ids = list(bos_ids)
-        for t in system_turns + convo_turns:
-            prompt_ids.extend(t)
-        prompt_ids.extend(assistant_lead_in)
-    
-        # This is a final guard for oversized system prompts; keep the newest suffix.
-        if len(prompt_ids) > max_prompt_len:
-            prompt_ids = prompt_ids[-max_prompt_len:]
-    
-        prompt = self.tokenizer.decode(prompt_ids)
-        output = self.generate(prompt, temperature, top_k, repetition_penalty,max_new_tokens, device)
-    
-        # Return only the assistant's first response, stopping at any new turn marker.
-        assistant_text = output.rsplit("<|assistant|>", 1)[1] if "<|assistant|>" in output else output
-        assistant_text = assistant_text.replace("<bos>", "").replace("<eos>", "")
-        for tag in ("<|user|>", "<|assistant|>", "<|system|>"):
-            if tag in assistant_text:
-                assistant_text = assistant_text.split(tag, 1)[0]
-        return assistant_text.strip()
+    def chat(self, messages: list[dict], max_new_tokens: int = 512, temperature: float = 0.7, top_k: int = 50, top_p: float = 0.9, repetition_penalty: float = 1.1, 
+             system_prompt: str | None = None, device: str | torch.device | None = None, return_thinking: bool = False) -> str | tuple[str, str]:
+        """
+        Reply to a conversation using exactly the Phase 3 training format:
+            <bos><system>S</system><user>U</user><assistant>A</assistant> ... <user>U</user><assistant>
+        Generation stops at </assistant> or <eos>.
+
+        Args:
+            messages: [{"role": "system" | "user" | "assistant", "content": str}, ...], ending with a user turn.
+            system_prompt: Overrides any system message. Use the same prompt Phase 3 was trained with.
+            return_thinking: Return (thinking, answer) instead of only the answer.
+        
+        Returns:
+            Decoded text.
+        """
+        SPECIAL_TOKENS = self.special_tokens
+        
+        # Get the system prompt
+        sys_prompt = system_prompt or next((msg["content"] for msg in messages if msg.get("role") == "system"), None)
+        
+        turns = [msg for msg in messages if msg.get("role") in ("user", "assistant")]
+        
+        # Check the last turn is a user turn
+        if not turns or turns[-1]["role"] != "user":
+            raise ValueError("Chat messages must end with a user turn")
+        
+        # Reference the encoder
+        encode = self.tokenizer.encode
+        
+        head = encode(SPECIAL_TOKENS["bos"]) + (encode(f"{SPECIAL_TOKENS['system']}{sys_prompt}{SPECIAL_TOKENS['end_system']}") if sys_prompt else [])
+        
+        # The reply is generated right after the assistant opening tag
+        lead_in = encode(SPECIAL_TOKENS["assistant"])
+        
+        # Opening / closing tags per role
+        role_tags = {
+            "user": (SPECIAL_TOKENS["user"], SPECIAL_TOKENS["end_user"]),
+            "assistant": (SPECIAL_TOKENS["assistant"], SPECIAL_TOKENS["end_assistant"]),
+        }
+        
+        # Encode every turn once, keeping its role for trimming
+        encoded_turns = []
+        for msg in turns:
+            open_tag, close_tag = role_tags[msg["role"]]
+            encoded_turns.append((msg["role"], encode(f"{open_tag}{msg['content']}{close_tag}")))
+        
+        # Drop the oldest turns until the prompt leaves room for the reply.
+        # The history must start on a user turn, and the last user message is always kept.
+        budget = self.max_seq_len - max_new_tokens - len(head) - len(lead_in)
+        while len(encoded_turns) > 1 and (sum(len(ids) for _, ids in encoded_turns) > budget or encoded_turns[0][0] != "user"):
+            encoded_turns.pop(0)
+        
+        # Build the prompt ids directly, so nothing is decoded and re-tokenized
+        prompt_ids = head + [tok for _, ids in encoded_turns for tok in ids] + lead_in
+        
+        # Generate the reply
+        reply = self.generate(prompt_ids, max_new_tokens= max_new_tokens, temperature= temperature, top_k= top_k, top_p= top_p, repetition_penalty= repetition_penalty,
+                              stop_tokens= (SPECIAL_TOKENS["end_assistant"], SPECIAL_TOKENS["eos"]), device= device, return_prompt= False)
+        
+        # A thinking reply looks like "answer"
+        thinking, answer = "", reply
+        if SPECIAL_TOKENS["end_thinking"] in reply:
+            thinking, answer = reply.split(SPECIAL_TOKENS["end_thinking"], 1)
+            thinking = thinking.replace(SPECIAL_TOKENS["thinking"], "")
+        
+        return (thinking.strip(), answer.strip()) if return_thinking else answer.strip()
+
+    @staticmethod
+    def _sample(logits: Tensor, seen: list[int], temperature: float, top_k: int, top_p: float,
+                repetition_penalty: float) -> int:
+        """Pick the next token id from one position's logits (vocab,)."""
+        if repetition_penalty != 1.0 and seen:
+            idx = torch.tensor(sorted(set(seen)), device=logits.device)
+            vals = logits[idx]
+            # Divide positive logits, multiply negative ones: both make the token less likely
+            logits[idx] = torch.where(vals > 0, vals / repetition_penalty, vals * repetition_penalty)
+
+        if temperature <= 0.0:
+            return int(logits.argmax())
+        logits = logits / temperature
+
+        if 0 < top_k < logits.numel():
+            kth = torch.topk(logits, top_k).values[-1]
+            logits = logits.masked_fill(logits < kth, float("-inf"))
+
+        if top_p < 1.0:
+            sorted_logits, sorted_idx = torch.sort(logits, descending=True)
+            probs = torch.softmax(sorted_logits, dim=-1)
+            # Drop tokens once the mass BEFORE them already reaches top_p (always keeps the top token)
+            sorted_logits[(probs.cumsum(-1) - probs) >= top_p] = float("-inf")
+            logits = torch.full_like(logits, float("-inf")).scatter(0, sorted_idx, sorted_logits)
+
+        return int(torch.multinomial(torch.softmax(logits, dim=-1), num_samples=1))
