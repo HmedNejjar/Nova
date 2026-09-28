@@ -194,7 +194,7 @@ This writes `Preprocess/Tokenizer/tokenizer.json` with the special tokens `<bos>
 
 ### 2. Prepare the data
 
-Each phase reads packed `.npy` shards plus a `manifest.json` from the `train` and `test` folders set under `Datasets` in `config.yaml`. See [GPT/datasets.py](GPT/datasets.py) and [Preprocess/common.py](Preprocess/common.py) for the expected layout.
+Each phase reads packed `.npy` shards plus a `manifest.json` from the `train` and `test` folders set under `Datasets` in `config.yaml`.
 
 ### 3. Train
 
@@ -280,7 +280,7 @@ Nova puts **understanding over convenience**:
 - Everything is driven by one `config.yaml`.
 - Training is fully resumable (bit-exact data position, RNG and optimizer state).
 
-It's a research and learning project. It isn't intended for production use.
+It's a research and learning project. It isn't intended for production use (yet).
 
 ---
 
