@@ -158,7 +158,7 @@ def train_step(model: nn.Module, optimizer: torch.optim.Optimizer, scheduler: to
     
     return {"loss_sum": loss_total, "n_target": n_total, "correct": correct, "acc_n": acc_n, "input_tokens": input_tokens, "grad_norm": grad_norm, "stepped": stepped}
 
-def log_step(tracker: MetricTracker, scheduler, scaler, state: TrainState, config: TrainConfig, grad_norm: torch.Tensor, nonfinite: int, pbar: tqdm) -> None:
+def log_step(tracker: MetricTracker, scheduler, scaler, state: TrainState, config: TrainConfig, grad_norm: torch.Tensor, nonfinite: int, postfix: dict) -> None:
     m = tracker.compute()
     rec = {"step": state.step, "loss": m["loss"], "acc": m["acc"], "lr": scheduler.get_last_lr()[0], "grad_norm": float(grad_norm),
            "tok_per_s": m["throughput"], "epoch": state.epoch, "nonfinite_steps": nonfinite}
@@ -166,7 +166,8 @@ def log_step(tracker: MetricTracker, scheduler, scaler, state: TrainState, confi
     if scaler is not None:
         rec["loss_scale"] = scaler.get_scale()
     append_jsonl(config.train_log, rec)
-    pbar.set_postfix(loss=f"{m['loss']:.3f}", lr=f"{rec['lr']:.2e}", gn=f"{rec['grad_norm']:.2f}")
+    # window averages; shown next to the per-step loss until the next log
+    postfix.update(avg=f"{m['loss']:.3f}", lr=f"{rec['lr']:.2e}", gn=f"{rec['grad_norm']:.2f}")
     tracker.reset()
 
 def run_eval(model: nn.Module, config: dict, state: TrainState, train_cfg: TrainConfig) -> None:
@@ -197,7 +198,8 @@ def train(model: nn.Module, optimizer: torch.optim.Optimizer, scheduler: torch.o
     nonfinite_steps = 0
     
     pbar = tqdm(total= train_cfg.MAX_STEPS, initial=train_state.step, dynamic_ncols=True, desc="Training...")
-    
+    postfix = {}
+
     try:
         while train_state.step < train_cfg.MAX_STEPS:
             want_acc = (train_state.step + 1) % train_cfg.LOG_EVERY == 0
@@ -210,9 +212,11 @@ def train(model: nn.Module, optimizer: torch.optim.Optimizer, scheduler: torch.o
                 tracker.update(stats['loss_sum'], None, None, stats["n_target"], update_acc= False, input_tokens= stats["input_tokens"])
                 tracker.add_accuracy(stats["correct"], stats["acc_n"])
                 nonfinite_steps += int(not stats["stepped"])
-                
+
                 if want_acc:
-                    log_step(tracker, scheduler, scaler, train_state, train_cfg, stats["grad_norm"], nonfinite_steps, pbar)
+                    log_step(tracker, scheduler, scaler, train_state, train_cfg, stats["grad_norm"], nonfinite_steps, postfix)
+                # this step's token-weighted loss (one GPU sync per optimizer step)
+                pbar.set_postfix(loss=f"{float(stats['loss_sum']) / stats['n_target']:.3f}", **postfix)
             
             if train_state.step % train_cfg.EVAL_EVERY == 0:
                 run_eval(model, config, train_state, train_cfg)

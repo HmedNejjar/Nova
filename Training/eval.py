@@ -196,7 +196,7 @@ def sample_generations(model: nn.Module, prompts: list[str], device: torch.devic
     was_training = model.training
     samples = {}
     
-        for prompt in prompts:
-            samples[prompt] = model.generate(prompt, max_new_tokens=max_new_tokens, temperature=0.0, stop_tokens=("<eos>", "</assistant>"), device=device, return_prompt=False)
+    for prompt in prompts:
+        samples[prompt] = model.generate(prompt, max_new_tokens=max_new_tokens, temperature=0.0, stop_tokens=("<eos>", "</assistant>"), device=device, return_prompt=False)
 
     return samples

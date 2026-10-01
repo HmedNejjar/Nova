@@ -78,10 +78,10 @@ class MetricTracker:
 
 # --------------------------------------------------------------------------- #
 # Phase 3 per-case loss
-# (0 = direct answer, 1 = thinking, 2 = multilingual direct, 3 = identity)
+# (0 = direct answer, 1 = thinking, 2 = multilingual direct, 3 = identity, 4 = math)
 # --------------------------------------------------------------------------- #
 
-CASE_NAMES = {0: "direct", 1: "thinking", 2: "multilingual", 3: "identity"}
+CASE_NAMES = {0: "direct", 1: "thinking", 2: "multilingual", 3: "identity", 4: "math"}
 
 class CaseTracker:
     """Token-weighted loss per Phase 3 case, built from per-token losses.
