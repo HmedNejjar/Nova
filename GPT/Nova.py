@@ -57,7 +57,9 @@ class NovaLM(nn.Module):
         self.token_embedding = nn.Embedding(self.vocab_size, self.embed_dim)
         
         # Decoder blocks
-        self.decoder = Decoder(self.embed_dim, self.num_layers, self.num_heads, self.head_dim, self.num_kv_heads, self.max_seq_len, self.hidden_dim, self.rope_base, self.dropout, self.eps, self.bias)
+        # Activation checkpointing is a training-memory knob, so it lives under Train
+        checkpoint_layers = int(config.get("Train", {}).get("grad_checkpoint_layers", 0))
+        self.decoder = Decoder(self.embed_dim, self.num_layers, self.num_heads, self.head_dim, self.num_kv_heads, self.max_seq_len, self.hidden_dim, self.rope_base, self.dropout, self.eps, self.bias, checkpoint_layers)
         
         # Final normalization layer
         self.final_norm = RMSNorm(d_model=self.embed_dim, eps=self.eps)

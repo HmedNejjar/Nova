@@ -17,7 +17,7 @@ from GPT.Nova import NovaLM
 from Training.utils import load_config, set_seed, get_precision, set_dataloader, infinite_loader, to_device, truncate_jsonl, append_jsonl
 from Training.optimizer import build_optimizer, build_scheduler
 from Training.checkpoints import checkpoint_save, checkpoint_load, save_weights, copy_checkpoint
-from Training.eval import chunked_lm_loss, evaluate, sample_generations, DEFAULT_PROMPTS
+from Training.eval import chunk_has_targets, chunked_lm_loss, evaluate, sample_generations, DEFAULT_PROMPTS
 from Training.metrics import MetricTracker, plot_metrics
 
 @dataclass
@@ -118,12 +118,14 @@ def train_step(model: nn.Module, optimizer: torch.optim.Optimizer, scheduler: to
     
         # Forward pass
     for batch in window:
+        # decided from the CPU labels, so the loss never waits on the GPU
+        active_chunks = chunk_has_targets(batch["labels"])
         batch = to_device(batch, config.DEVICE)
-        
+
         with torch.autocast(device_type= config.DEVICE.type, dtype= config.AMP_DTYPE, enabled= config.use_amp):
             pred, _ = model(batch["input_ids"], None, batch["position_ids"], batch["attn_mask"], return_hidden= True)
-            
-            loss_sum, corct, acc = chunked_lm_loss(model, pred, batch["labels"], want_acc= want_acc) 
+
+            loss_sum, corct, acc = chunked_lm_loss(model, pred, batch["labels"], want_acc= want_acc, active_chunks= active_chunks)
             
         if loss_sum.requires_grad:
             loss = loss_sum / n_total

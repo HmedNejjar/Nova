@@ -30,7 +30,15 @@ DEFAULT_PROMPTS = {
 # Loss
 # --------------------------------------------------------------------------- #
 
-def chunked_lm_loss(model: nn.Module, hidden: Tensor, labels: Tensor, chunk_size: int = 1024, want_acc: bool = False) -> tuple[Tensor, int, int]:
+def chunk_has_targets(labels: Tensor, chunk_size: int = 1024) -> list[bool]:
+    """Which sequence chunks of `labels` contain at least one target.
+
+    Call it on the CPU copy of the labels: asking a GPU tensor makes the CPU wait
+    for every queued kernel, which stalls the launch pipeline.
+    """
+    return [bool((labels[:, start:start + chunk_size] != -100).any()) for start in range(0, labels.size(1), chunk_size)]
+
+def chunked_lm_loss(model: nn.Module, hidden: Tensor, labels: Tensor, chunk_size: int = 1024, want_acc: bool = False, active_chunks: list[bool] | None = None) -> tuple[Tensor, int, int]:
     """Training loss from the final hidden states, one sequence chunk at a time.
 
     Full logits for a 150k vocab are huge (micro 4 x 4096 tokens is ~4.9 GB in
@@ -44,6 +52,8 @@ def chunked_lm_loss(model: nn.Module, hidden: Tensor, labels: Tensor, chunk_size
         labels: (batch_size, seq_len) shifted labels, -100 where there is no target.
         want_acc: also count correct argmax predictions (costs one extra
             no-grad pass over lm_head, so only ask on logging steps).
+        active_chunks: chunk_has_targets() of the CPU labels; chunks marked False
+            are skipped. If None it is computed from `labels` (a GPU sync).
 
     Returns:
         (loss_sum, correct, n_acc): summed cross-entropy (with grad) over all
@@ -56,20 +66,28 @@ def chunked_lm_loss(model: nn.Module, hidden: Tensor, labels: Tensor, chunk_size
         return F.cross_entropy(logits.reshape(-1, logits.size(-1)), lbl.reshape(-1),
                                ignore_index=-100, reduction="sum")
 
+    if active_chunks is None:
+        active_chunks = chunk_has_targets(labels, chunk_size)
+
     loss_sum = hidden.new_zeros((), dtype=torch.float32)
-    correct, n_acc = 0, 0
-    for start in range(0, hidden.size(1), chunk_size):
+    # accuracy counts stay on the GPU and are read back once at the end
+    correct = hidden.new_zeros((), dtype=torch.long)
+    n_acc = hidden.new_zeros((), dtype=torch.long)
+    for start, active in zip(range(0, hidden.size(1), chunk_size), active_chunks):
+        if not active:
+            continue    # nothing to learn in this chunk (e.g. Phase 3 prompt, padding)
         h = hidden[:, start:start + chunk_size]
         lbl = labels[:, start:start + chunk_size]
-        if not (lbl != -100).any():
-            continue    # nothing to learn in this chunk (e.g. Phase 3 prompt, padding)
         loss_sum = loss_sum + checkpoint(chunk_ce, h, lbl, use_reentrant=False)
         if want_acc:
             with torch.no_grad():
                 pred = F.linear(h, weight, bias).argmax(dim=-1)
                 valid = lbl != -100
-                correct += int((pred[valid] == lbl[valid]).sum().item())
-                n_acc += int(valid.sum().item())
+                correct += ((pred == lbl) & valid).sum()
+                n_acc += valid.sum()
+    if not want_acc:
+        return loss_sum, 0, 0
+    correct, n_acc = torch.stack((correct, n_acc)).tolist()
     return loss_sum, correct, n_acc
 
 @torch.no_grad()
