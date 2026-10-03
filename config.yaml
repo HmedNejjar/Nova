@@ -2,7 +2,7 @@ Tokenizer:
     type: "Byte-Pair Encoding - BPE"
     savepath: "Preprocess/Tokenizer"
     corpus_path: "corpus.txt"
-    vocab_size: 150_000
+    vocab_size: 150_016
     special_tokens:
         bos: <bos>
         eos: <eos>
@@ -18,13 +18,13 @@ Tokenizer:
         pad: <pad>
 
 Model:
-    embed_dim: 2048   
+    embed_dim: 1536   
     num_layers: 28
-    num_heads: 16
-    hidden_dim: 5504
-    num_kv_heads: 8
+    num_heads: 12
+    hidden_dim: 4096
+    num_kv_heads: 6
     head_dim: 128
-    max_seq_len: 32768
+    max_seq_len: 4096
     weight_tying: True
     bias: False
     dropout: 0.0
@@ -43,15 +43,15 @@ Train:
     grad_clip: 1.0
     log_every: 10
     eval_every: 500
-    eval_batches: 32
-
+    eval_batches: 16
     ckpt_every: 1000
     save_dir: "Model/Checkpoints"
-    keep_last: 2                  
+    keep_last: 2     
+    checkpoint_layers: 14 # int: from 0 to num_layers    ||  Higher = (less memory, more computational cost)    
 
-    Phase_1: {min_lr: 3.0e-5, lr: 5.0e-4, warmup_steps: 1500, max_steps: 39_936, micro_batch: 4, grad_accum: 16, weight_decay: 0.1}
-    Phase_2: {min_lr: 2.0e-5, lr: 3.0e-4, warmup_steps: 1500, max_steps: 39_936, micro_batch: 4, grad_accum: 16, weight_decay: 0.1}
-    Phase_3: {min_lr: 2.0e-5, lr: 5.0e-4, warmup_steps: 1500, max_steps: 39_936, micro_batch: 4, grad_accum: 16, weight_decay: 0.1}
+    Phase_1: {min_lr: 3.0e-5, lr: 5.0e-4, warmup_steps: 1500, max_steps: 20_027, micro_batch: 8, grad_accum: 16, weight_decay: 0.1}
+    Phase_2: {min_lr: 2.0e-5, lr: 3.0e-4, warmup_steps: 1500, max_steps: 152_704, micro_batch: 8, grad_accum: 16, weight_decay: 0.1}
+    Phase_3: {min_lr: 2.0e-5, lr: 5.0e-4, warmup_steps: 1500, max_steps: 13_500, micro_batch: 8, grad_accum: 16, weight_decay: 0.1}
 
     ignore_idx: -100
 
