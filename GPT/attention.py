@@ -8,7 +8,7 @@ import torch.nn as nn
 from torch.nn.functional import scaled_dot_product_attention as SDPA
 from torch import Tensor
 
-from Preprocess.pos_embed import RoPE
+from Preprocess.pos_embed import apply_rotary
 
 class GroupedQueryAttention(nn.Module):
     def __init__(self, embed_dim: int, num_heads: int, head_dim: int, num_kv_heads: int, bias: bool) -> None:
@@ -31,11 +31,11 @@ class GroupedQueryAttention(nn.Module):
         #Computation of attention output
         self.out_proj = nn.Linear(embed_dim, embed_dim, bias= bias)
         
-    def forward(self, X: Tensor, rope: tuple[Tensor, Tensor], cache: dict | None = None, attn_mask: Tensor | None = None) -> tuple[Tensor, dict | None]:
+    def forward(self, X: Tensor, rope_cos: Tensor, rope_sin: Tensor, cache: dict | None = None, attn_mask: Tensor | None = None) -> tuple[Tensor, dict | None]:
         """
         Args:
             X: Input tensor of shape (batch_size, seq_len T, embed_dim d)
-            rope: (cos, sin) from RoPE.cos_sin(), computed once per forward by the Decoder
+            rope_cos, rope_sin: RoPE tables for this step's positions, shared across layers
             cache: KV cache stored in a dict if available
 
         Returns:
@@ -53,8 +53,8 @@ class GroupedQueryAttention(nn.Module):
         V = self.v_proj(X).view(batch_size, seq_len, self.num_kv_heads, self.head_dim)
         
         # Apply RoPE to Q and K
-        Q = RoPE.apply_rotary(Q, *rope)
-        K = RoPE.apply_rotary(K, *rope)
+        Q = apply_rotary(Q, rope_cos, rope_sin)
+        K = apply_rotary(K, rope_cos, rope_sin)
         
         # Transpose Q, K, V
         Q = Q.transpose(1,2) # (batch_size, num_heads, seq_len, head_dim)

@@ -48,6 +48,7 @@ class NovaLM(nn.Module):
         self.dropout = float(model_config["dropout"])
         self.eps = float(model_config["eps"])
         self.bias = bool(model_config["bias"])
+        self.checkpoint_layers = int(model_config.get("checkpoint_layers", self.num_layers // 2))
 
 
         # Configure model tokenizer
@@ -57,9 +58,7 @@ class NovaLM(nn.Module):
         self.token_embedding = nn.Embedding(self.vocab_size, self.embed_dim)
         
         # Decoder blocks
-        # Activation checkpointing is a training-memory knob, so it lives under Train
-        checkpoint_layers = int(config.get("Train", {}).get("grad_checkpoint_layers", 0))
-        self.decoder = Decoder(self.embed_dim, self.num_layers, self.num_heads, self.head_dim, self.num_kv_heads, self.max_seq_len, self.hidden_dim, self.rope_base, self.dropout, self.eps, self.bias, checkpoint_layers)
+        self.decoder = Decoder(self.embed_dim, self.num_layers, self.num_heads, self.head_dim, self.num_kv_heads, self.max_seq_len, self.hidden_dim, self.rope_base, self.dropout, self.eps, self.bias, self.checkpoint_layers)
         
         # Final normalization layer
         self.final_norm = RMSNorm(d_model=self.embed_dim, eps=self.eps)
@@ -158,7 +157,7 @@ class NovaLM(nn.Module):
                 # Record the token we just generated
                 generated_ids.append(next_id)
                 
-                if len(input_ids) + len(generated_ids) >= max_new_tokens:
+                if len(generated_ids) >= max_new_tokens:
                     break
                 
                 # Feed that token back through the model to get the next logits
