@@ -33,6 +33,7 @@ class NovaLM(nn.Module):
         model_config = config["Model"]
         tokenizer_config = config["Tokenizer"]
         tokenizer_path = tokenizer_config["savepath"]
+        self.generation_config = config["Generation"]
         
         self.vocab_size = tokenizer_config["vocab_size"]
         self.special_tokens = tokenizer_config["special_tokens"]
@@ -103,7 +104,7 @@ class NovaLM(nn.Module):
         return f"{summary}\nTotal parameters: {total_params}"
     
     @torch.no_grad()
-    def generate(self, prompt: str | list[int], max_new_tokens: int = 128, temperature: float = 1.0, top_k: int = 0, top_p: float = 1.0, repetition_penalty: float = 1.0,
+    def generate(self, prompt: str | list[int], max_new_tokens: int = 128, temperature: float | None = None, top_k: int | None = None, top_p: float | None = None, repetition_penalty: float | None = None,
                  stop_tokens: tuple[str, ...] = ("<eos>",), device: str | torch.device | None = None, return_prompt: bool = True) -> str:
         """
         Autoregressive generation with a KV cache.
@@ -126,6 +127,12 @@ class NovaLM(nn.Module):
         self.eval()
         
         device = torch.device(device) if device is not None else next(self.parameters()).device
+        
+        # Set default values if not provided
+        temperature = self.generation_config["temperature"] if temperature is None else temperature
+        top_k = self.generation_config["top_k"] if top_k is None else top_k
+        top_p = self.generation_config["top_p"] if top_p is None else top_p
+        repetition_penalty = self.generation_config["repetition_penalty"] if repetition_penalty is None else repetition_penalty
         
         # Encode the prompt
         input_ids = self.tokenizer.encode(prompt) if isinstance(prompt, str) else [int(token) for token in prompt]
@@ -171,7 +178,7 @@ class NovaLM(nn.Module):
 
                 
     @torch.no_grad()
-    def chat(self, messages: list[dict], max_new_tokens: int = 512, temperature: float = 0.7, top_k: int = 50, top_p: float = 0.9, repetition_penalty: float = 1.1, 
+    def chat(self, messages: list[dict], max_new_tokens: int = 512, temperature: float | None = None, top_k: int | None = None, top_p: float | None = None, repetition_penalty: float | None = None, 
              system_prompt: str | None = None, device: str | torch.device | None = None, return_thinking: bool = False) -> str | tuple[str, str]:
         """
         Reply to a conversation using exactly the Phase 3 training format:
@@ -189,7 +196,7 @@ class NovaLM(nn.Module):
         SPECIAL_TOKENS = self.special_tokens
         
         # Get the system prompt
-        sys_prompt = system_prompt or next((msg["content"] for msg in messages if msg.get("role") == "system"), None)
+        sys_prompt = (system_prompt if system_prompt is not None else self.generation_config["system_prompt"]) or next((msg["content"] for msg in messages if msg.get("role") == "system"), None)
         
         turns = [msg for msg in messages if msg.get("role") in ("user", "assistant")]
         

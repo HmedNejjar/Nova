@@ -7,6 +7,7 @@ sys.path.insert(1, str(ROOT))
 
 import argparse
 import importlib.util
+import time
 import torch, torch.nn as nn
 from torch.nn.utils import clip_grad_norm_
 from tqdm import tqdm
@@ -169,7 +170,7 @@ def log_step(tracker: MetricTracker, scheduler, scaler, state: TrainState, confi
         rec["loss_scale"] = scaler.get_scale()
     append_jsonl(config.train_log, rec)
     # window averages; shown next to the per-step loss until the next log
-    postfix.update(avg=f"{m['loss']:.3f}", lr=f"{rec['lr']:.2e}", gn=f"{rec['grad_norm']:.2f}")
+    postfix.update(avg=f"{m['loss']:.3f}", lr=f"{rec['lr']:.2e}", gn=f"{rec['grad_norm']:.2f}", tok_per_s=f"{m['throughput']:,.0f}")
     tracker.reset()
 
 def run_eval(model: nn.Module, config: dict, state: TrainState, train_cfg: TrainConfig) -> None:
@@ -220,12 +221,19 @@ def train(model: nn.Module, optimizer: torch.optim.Optimizer, scheduler: torch.o
                 # this step's token-weighted loss (one GPU sync per optimizer step)
                 pbar.set_postfix(loss=f"{float(stats['loss_sum']) / stats['n_target']:.3f}", **postfix)
             
+            paused = False
             if train_state.step % train_cfg.EVAL_EVERY == 0:
                 run_eval(model, config, train_state, train_cfg)
-                
+                paused = True
+
             if train_state.step % train_cfg.CHECKPT_EVERY == 0 or train_state.step == train_cfg.MAX_STEPS:
                 save_checkpoint(model, optimizer, scheduler, scaler, train_state, train_cfg)
-                
+                paused = True
+
+            # keep eval/checkpoint time out of the tok/s window
+            if paused:
+                tracker.time_start = time.perf_counter()
+
     finally:
         pbar.close()
     
