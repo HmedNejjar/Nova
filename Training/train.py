@@ -15,7 +15,7 @@ from typing import Generator
 from dataclasses import dataclass, asdict, fields
 
 from GPT.Nova import NovaLM
-from Training.utils import load_config, set_seed, get_precision, set_dataloader, infinite_loader, to_device, truncate_jsonl, append_jsonl
+from Training.utils import load_config, set_seed, get_precision, set_dataloader, infinite_loader, document_block_mask, to_device, truncate_jsonl, append_jsonl
 from Training.optimizer import build_optimizer, build_scheduler
 from Training.checkpoints import checkpoint_save, checkpoint_load, save_weights, copy_checkpoint
 from Training.eval import chunk_has_targets, chunked_lm_loss, evaluate, sample_generations, DEFAULT_PROMPTS
@@ -122,9 +122,10 @@ def train_step(model: nn.Module, optimizer: torch.optim.Optimizer, scheduler: to
         # decided from the CPU labels, so the loss never waits on the GPU
         active_chunks = chunk_has_targets(batch["labels"])
         batch = to_device(batch, config.DEVICE)
+        block_mask = document_block_mask(batch["doc_ids"])
 
         with torch.autocast(device_type= config.DEVICE.type, dtype= config.AMP_DTYPE, enabled= config.use_amp):
-            pred, _ = model(batch["input_ids"], None, batch["position_ids"], batch["attn_mask"], return_hidden= True)
+            pred, _ = model(batch["input_ids"], None, batch["position_ids"], block_mask, return_hidden= True)
 
             loss_sum, corct, acc = chunked_lm_loss(model, pred, batch["labels"], want_acc= want_acc, active_chunks= active_chunks)
             

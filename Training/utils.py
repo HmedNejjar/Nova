@@ -11,6 +11,8 @@ import numpy as np
 import random
 from os import environ, fsync
 import torch
+from torch import Tensor
+from torch.nn.attention.flex_attention import create_block_mask, BlockMask
 from torch.utils.data import DataLoader
 
 from typing import Callable, Literal
@@ -146,6 +148,27 @@ def infinite_loader(make_dl: Callable[[int, int], DataLoader], epoch: int = 0, s
                                "check dataset path / skip_blocks")
         epoch += 1
         skip_blocks = 0
+        
+# --------------------------------------------------------------------------- #
+# Attention mask
+# --------------------------------------------------------------------------- #
+
+def document_block_mask(doc_ids: Tensor) -> BlockMask:
+    """
+    Create a block mask for flex attention based on document IDs.
+
+    Args:
+        doc_ids: A tensor of shape (batch_size, seq_len) containing document IDs.
+    Returns:
+        A BlockMask object that can be used with flex_attention.
+    """
+    batch_size, seq_len = doc_ids.shape
+    
+    def mask_mod(b, h, q_idx, kv_idx):
+        # Determine if the query and key-value indices belong to the same document and key not in the future
+        return (doc_ids[b, q_idx] == doc_ids[b, kv_idx]) & (q_idx >= kv_idx)
+    
+    return create_block_mask(mask_mod, batch_size, None, seq_len, seq_len, device= doc_ids.device)
             
 # --------------------------------------------------------------------------- #
 # JSONL metric logs

@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.nn.attention.flex_attention import BlockMask
 from typing import cast
 from torch import Tensor
 from torch.utils.checkpoint import checkpoint
@@ -35,12 +36,12 @@ class DecoderBlock(nn.Module):
         self.dropout = nn.Dropout(dropout)
         
         
-    def forward(self, X: Tensor, rope_cos: Tensor, rope_sin: Tensor, cache: dict | None = None, attn_mask: Tensor | None = None) -> tuple[Tensor, dict]:
+    def forward(self, X: Tensor, rope_cos: Tensor, rope_sin: Tensor, cache: dict | None = None, block_mask: BlockMask | None = None) -> tuple[Tensor, dict]:
         # 1. Pre-Attention normalization
         X_norm = self.attn_norm(X)
         
         # 2. Apply GQA
-        attn_out, new_cache = self.gqa(X_norm, rope_cos, rope_sin, cache, attn_mask)
+        attn_out, new_cache = self.gqa(X_norm, rope_cos, rope_sin, cache, block_mask)
         
         # 3. Add residual connection with dropout
         X = X + self.dropout(attn_out)
@@ -61,9 +62,9 @@ class DecoderBlock(nn.Module):
         Feed Forward Network with SwiGLU activation function.
 
         Args:
-            x: Input tensor of shape (batch_size, seq_len, embed_dim )
+            x: Input tensor of shape (batch_size, seq_len, embed_dim)
         Returns:
-            Tensor of shape (batch_size, seq_len , embed_dim ) after applying SwiGLU
+            Tensor of shape (batch_size, seq_len , embed_dim) after applying SwiGLU
         """
         gated = F.silu(self.gate_proj(x)) * self.up_proj(x)
         return self.down_proj(gated)
@@ -81,7 +82,7 @@ class Decoder(nn.Module):
         self.blocks = nn.ModuleList(DecoderBlock(embed_dim, num_heads, head_dim, num_kv_heads, hidden_dim, dropout, eps, bias)
                                     for _ in range(num_layers))
         
-    def forward(self, X: Tensor, cache_list: list[dict] | None, position_ids: Tensor | None = None, attn_mask: Tensor | None = None) -> tuple[Tensor, list[dict]]:
+    def forward(self, X: Tensor, cache_list: list[dict] | None, position_ids: Tensor | None = None, block_mask: BlockMask | None = None) -> tuple[Tensor, list[dict]]:
         new_cache_list = []
         
         use_checkpoint = self.training and cache_list is None
@@ -96,9 +97,9 @@ class Decoder(nn.Module):
             layer_cache = cache_list[i] if cache_list is not None else None
             
             if use_checkpoint and i < self.checkpoint_layers:
-                X, new_cache = cast(tuple[Tensor, dict], checkpoint(block, X, rope_cos, rope_sin, layer_cache, attn_mask, use_reentrant=False),)
+                X, new_cache = cast(tuple[Tensor, dict], checkpoint(block, X, rope_cos, rope_sin, layer_cache, block_mask, use_reentrant=False),)
             else:
-                X, new_cache = block(X, rope_cos, rope_sin, layer_cache, attn_mask)
+                X, new_cache = block(X, rope_cos, rope_sin, layer_cache, block_mask)
             new_cache_list.append(new_cache)
                 
         return (X, new_cache_list)

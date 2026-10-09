@@ -148,7 +148,8 @@ class Phase_1_2_Dataset(IterableDataset):
           1. Shifts input_ids to create next-token prediction labels.
           2. Resets position_ids to 0 at each document boundary so RoPE
              encodes intra-document positions only.
-          3. Builds a block-diagonal causal attention mask so tokens can
+          3. Assigns each token the id of the document it belongs to; the
+             training step turns these into a FlexAttention BlockMask so tokens
              attend only to earlier tokens within the same document.
           4. Masks out the label at each interior document boundary (-100)
              to prevent the model from learning cross-document transitions.
@@ -165,29 +166,23 @@ class Phase_1_2_Dataset(IterableDataset):
         
         # Create a 1D tensor of absolute sequence positions [0, 1, ..., seq_len-1]
         positions = torch.arange(seq_len, device=input_ids.device)
-        # Create a standard lower-triangular causal mask (True = allowed to attend)
-        causal_mask = torch.tril(torch.ones((seq_len, seq_len), dtype=torch.bool, device=input_ids.device))
-        # Initialize tensors for document-local position IDs and attention masks
+
+        # Initialize tensors for document-local position IDs and per-token document IDs
         position_ids = torch.empty_like(input_ids)
-        attn_mask = torch.empty((batch_size, seq_len, seq_len), dtype=torch.bool, device=input_ids.device)
+        doc_ids = torch.empty_like(input_ids)
         
         for i, sample in enumerate(batch):
             # Get document boundary offsets for the current sample
             bounds = sample["boundaries"].to(device=input_ids.device, dtype=torch.long)
             # Assign a document ID to each absolute position based on the boundaries.
-            doc_ids = torch.searchsorted(bounds, positions, right=True)
+            doc_ids[i] = torch.searchsorted(bounds, positions, right=True)
             
             # Get the starting absolute position of each document (prepends 0 for the first doc)
             starts = torch.cat((bounds.new_zeros(1), bounds[:-1]))
             
             # Calculate local position IDs by subtracting the document's start offset.
             # This resets the position ID to 0 at the beginning of each document.
-            position_ids[i] = positions - starts[doc_ids]
-            
-            # Create a block-diagonal causal attention mask:
-            # 1. (doc_ids[:, None] == doc_ids[None, :]) ensures tokens only attend to the SAME document.
-            # 2. & causal_mask ensures tokens only attend to PREVIOUS tokens (causal ordering).
-            attn_mask[i] = (doc_ids[:, None] == doc_ids[None, :]) & causal_mask
+            position_ids[i] = positions - starts[doc_ids[i]]
             
             # Find boundaries that are strictly inside the sequence (excluding 0 and seq_len)
             interior_bounds = bounds[(bounds > 0) & (bounds < seq_len)]
@@ -205,7 +200,7 @@ class Phase_1_2_Dataset(IterableDataset):
             "input_ids": input_ids,
             "labels": labels,
             "position_ids": position_ids,
-            "attn_mask": attn_mask,
+            "doc_ids": doc_ids,
         }
 
 class Phase_3_ShardManifest:
@@ -331,36 +326,38 @@ class Phase3Dataset(IterableDataset):
  
     def collate(self, batch: list) -> dict:
         """
-        Builds the block-diagonal causal attention mask and per-conversation
-        RoPE position_ids from each sample's conv_bounds. Padding positions
-        (outside every conv's range) get self-attention only — otherwise an
-        all-False mask row produces NaN in softmax; the -100 label already
-        keeps them out of the loss, this just keeps the forward pass clean.
+        Builds per-token conversation ids and per-conversation RoPE
+        position_ids from each sample's conv_bounds. The training step turns
+        doc_ids into a FlexAttention BlockMask (same conversation AND causal).
+        Padding positions (outside every conv's range) get id -1: real tokens
+        never share it, so they never attend to padding, and each padding token
+        can still attend to itself, so no attention row is fully masked. The
+        -100 label already keeps padding out of the loss.
     
         case_labels is left as a per-sample list (ragged — conversation count
         varies per block), for slicing eval loss by RAG case later.
         """
         seq_len = batch[0]["input_ids"].shape[0]
-        B = len(batch)
+        batch_size = len(batch)
     
         input_ids = torch.stack([b["input_ids"] for b in batch])
         labels = torch.stack([b["labels"] for b in batch])
     
-        causal = torch.tril(torch.ones(seq_len, seq_len, dtype=torch.bool))
-        attn_mask = torch.eye(seq_len, dtype=torch.bool).unsqueeze(0).repeat(B, 1, 1)
-        position_ids = torch.zeros(B, seq_len, dtype=torch.long)
+        doc_ids = torch.full((batch_size, seq_len), -1, dtype=torch.long)
+        position_ids = torch.zeros(batch_size, seq_len, dtype=torch.long)
     
         for i, b in enumerate(batch):
-            for start, end in b["conv_bounds"].tolist():
+            # Assign conversation ids to each token
+            for j, (start, end) in enumerate(b["conv_bounds"].tolist()):
                 length = end - start
                 position_ids[i, start:end] = torch.arange(length)
-                attn_mask[i, start:end, start:end] |= causal[:length, :length]
+                doc_ids[i, start:end] = j
     
         return {
             "input_ids": input_ids,
             "labels": labels,
             "position_ids": position_ids,
-            "attn_mask": attn_mask,  # (B, seq_len, seq_len) bool, True = attend
+            "doc_ids": doc_ids,  # (B, seq_len) long, conversation id for each token
             "case_labels": [b["case_labels"] for b in batch],
             "conv_bounds": [b["conv_bounds"] for b in batch]
         }

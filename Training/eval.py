@@ -13,7 +13,7 @@ from torch.utils.data import DataLoader
 from torch.utils.checkpoint import checkpoint
 from tqdm import tqdm
 
-from Training.utils import to_device
+from Training.utils import to_device, document_block_mask
 from Training.metrics import MetricTracker, CaseTracker
 
 # Fixed prompts so samples are comparable from one eval to the next
@@ -165,11 +165,11 @@ def evaluate(model: nn.Module, dl: DataLoader, max_batches: int, amp_dtype: torc
             if n_batches >= max_batches:
                 break
             batch = to_device(batch, device)
+            block_mask = document_block_mask(batch["doc_ids"]) if "doc_ids" in batch else None
             labels = batch["labels"]
 
             with torch.autocast(device_type=device.type, dtype=amp_dtype, enabled=use_amp):
-                hidden, _ = model(batch["input_ids"], None, batch.get("position_ids"), batch.get("attn_mask"),
-                                  return_hidden=True)
+                hidden, _ = model(batch["input_ids"], None, batch.get("position_ids"), block_mask, return_hidden=True)
                 tok_loss, correct, n_acc = chunked_token_loss(model, hidden, labels)
 
             n_target = int((labels != -100).sum().item())
@@ -179,7 +179,7 @@ def evaluate(model: nn.Module, dl: DataLoader, max_batches: int, amp_dtype: torc
                 cases.update(tok_loss, labels, batch["conv_bounds"], batch["case_labels"])
 
             n_batches += 1
-            del hidden, tok_loss
+            del hidden, tok_loss, block_mask
     finally:
         pbar.close()
         # restore whatever mode the caller was in, even if eval raised

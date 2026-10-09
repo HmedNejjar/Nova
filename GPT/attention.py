@@ -3,13 +3,18 @@ from pathlib import Path
 ROOT = Path(__file__).parent.parent
 sys.path.insert(1, str(ROOT))
 
+from typing import cast
 import torch
 import torch.nn as nn
+from torch.nn.attention.flex_attention import flex_attention, BlockMask
 from torch.nn.functional import scaled_dot_product_attention as SDPA
 from torch import Tensor
 
 from Preprocess.pos_embed import apply_rotary
 
+# Compile flex_attention for faster execution
+Flex_Attention = torch.compile(flex_attention, dynamic=False)       
+    
 class GroupedQueryAttention(nn.Module):
     def __init__(self, embed_dim: int, num_heads: int, head_dim: int, num_kv_heads: int, bias: bool) -> None:
         super().__init__()
@@ -31,7 +36,7 @@ class GroupedQueryAttention(nn.Module):
         #Computation of attention output
         self.out_proj = nn.Linear(embed_dim, embed_dim, bias= bias)
         
-    def forward(self, X: Tensor, rope_cos: Tensor, rope_sin: Tensor, cache: dict | None = None, attn_mask: Tensor | None = None) -> tuple[Tensor, dict | None]:
+    def forward(self, X: Tensor, rope_cos: Tensor, rope_sin: Tensor, cache: dict | None = None, attn_mask: BlockMask | None = None) -> tuple[Tensor, dict | None]:
         """
         Args:
             X: Input tensor of shape (batch_size, seq_len T, embed_dim d)
@@ -76,8 +81,7 @@ class GroupedQueryAttention(nn.Module):
             raise ValueError("kv_cache cannot contain fewer tokens than the current input")
         
         if attn_mask is not None:
-            mask = attn_mask.unsqueeze(1)
-            attn_out = SDPA(Q, K, V, attn_mask=mask, enable_gqa=True)
+            attn_out = cast(Tensor, Flex_Attention(Q, K, V, block_mask=attn_mask, enable_gqa=True))
         elif past_len == 0:
             attn_out = SDPA(Q, K, V, is_causal=True, enable_gqa=True)
         else:
