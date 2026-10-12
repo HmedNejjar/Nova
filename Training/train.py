@@ -15,10 +15,10 @@ from typing import Generator
 from dataclasses import dataclass, asdict, fields
 
 from GPT.Nova import NovaLM
-from Training.utils import load_config, set_seed, get_precision, set_dataloader, infinite_loader, document_block_mask, to_device, truncate_jsonl, append_jsonl
+from Training.utils import load_config, set_seed, get_precision, set_dataloader, split_sources, infinite_loader, document_block_mask, to_device, truncate_jsonl, append_jsonl
 from Training.optimizer import build_optimizer, build_scheduler
 from Training.checkpoints import checkpoint_save, checkpoint_load, save_weights, copy_checkpoint
-from Training.eval import chunk_has_targets, chunked_lm_loss, evaluate, sample_generations, DEFAULT_PROMPTS
+from Training.eval import chunk_has_targets, chunked_lm_loss, evaluate, evaluate_sources, sample_generations, DEFAULT_PROMPTS
 from Training.metrics import MetricTracker, plot_metrics
 
 @dataclass
@@ -175,8 +175,16 @@ def log_step(tracker: MetricTracker, scheduler, scaler, state: TrainState, confi
     tracker.reset()
 
 def run_eval(model: nn.Module, config: dict, state: TrainState, train_cfg: TrainConfig) -> None:
-    # Fresh test loader every time so each eval scores the same batches (comparable)
-    test_dl = set_dataloader(train_cfg.PHASE, "test", config)
+    if split_sources(train_cfg.PHASE, "test", config):
+        # Phase 2: one loss per source folder, plus the mix-weighted overall loss
+        per_source = int(config["Train"]["Phase_2"].get("eval_batches_per_source", 8))
+        eval_res = evaluate_sources(model, config, train_cfg.PHASE, per_source, train_cfg.AMP_DTYPE, train_cfg.DEVICE)
+    else:
+        # Fresh test loader every time so each eval scores the same batches (comparable)
+        test_dl = set_dataloader(train_cfg.PHASE, "test", config)
+        eval_res = evaluate(model, test_dl, train_cfg.EVAL_BATCHES, train_cfg.AMP_DTYPE, train_cfg.DEVICE, train_cfg.PHASE)
+        del test_dl
+        
     eval_res = evaluate(model, test_dl, train_cfg.EVAL_BATCHES, train_cfg.AMP_DTYPE, train_cfg.DEVICE, train_cfg.PHASE)
     del test_dl
     eval_res["samples"] = sample_generations(model, DEFAULT_PROMPTS[train_cfg.PHASE], train_cfg.DEVICE)

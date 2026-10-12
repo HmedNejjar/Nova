@@ -13,7 +13,7 @@ from torch.utils.data import DataLoader
 from torch.utils.checkpoint import checkpoint
 from tqdm import tqdm
 
-from Training.utils import to_device, document_block_mask
+from Training.utils import to_device, document_block_mask, set_dataloader, split_sources, source_mix
 from Training.metrics import MetricTracker, CaseTracker
 
 # Fixed prompts so samples are comparable from one eval to the next
@@ -198,6 +198,41 @@ def evaluate(model: nn.Module, dl: DataLoader, max_batches: int, amp_dtype: torc
     if cases is not None:
         result["cases"] = cases.compute()
     return result
+
+def evaluate_sources(model: nn.Module, config: dict, phase: int, batches_per_source: int, amp_dtype: torch.dtype, device: torch.device) -> dict:
+    """Phase 2: score every test/<source> folder on its own.
+
+    The overall loss/accuracy weight each source by its share of the training
+    blocks, so the headline number tracks the same mix the model trains on.
+
+    Returns:
+        evaluate()'s keys for the whole mix, plus "sources": {name: loss}.
+    """
+    mix = source_mix(phase, config)
+    names = split_sources(phase, "test", config)
+    weights = {n: mix.get(n, 0.0) for n in names}
+    norm = sum(weights.values()) or 1.0
+
+    per_source, loss, acc, tokens, batches = {}, 0.0, 0.0, 0, 0
+    for name in names:
+        dl = set_dataloader(phase, "test", config, source=name)
+        r = evaluate(model, dl, batches_per_source, amp_dtype, device, phase)
+        del dl
+        per_source[name] = round(r["loss"], 4)
+        w = weights[name] / norm
+        loss += w * r["loss"]
+        acc += w * r["accuracy"]
+        tokens += r["tokens"]
+        batches += r["batches"]
+
+    return {
+        "loss": loss,
+        "perplexity": math.exp(min(loss, 20.0)) if not math.isnan(loss) else float("nan"),
+        "accuracy": acc,
+        "batches": batches,
+        "tokens": tokens,
+        "sources": per_source,
+    }
 
 # --------------------------------------------------------------------------- #
 # Samples

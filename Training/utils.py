@@ -16,7 +16,7 @@ from torch.nn.attention.flex_attention import create_block_mask, BlockMask
 from torch.utils.data import DataLoader
 
 from typing import Callable, Literal
-from GPT.datasets import Phase_1_2_Dataset, Phase3Dataset
+from GPT.datasets import Phase_1_2_Dataset, Phase3Dataset, MixedDatasets, source_names
 
 # --------------------------------------------------------------------------- #
 # Config / seed
@@ -72,7 +72,21 @@ def _dataset_dirs(cfg: dict, phase: int, split: str) -> str:
     # config paths use Windows separators; normalize for any OS
     return str(ROOT / cfg["Datasets"][key][split].replace("\\", "/"))
 
-def set_dataloader(phase: Literal[1, 2, 3], split: Literal["train", "test"], config: dict, epoch: int = 0, skip_blocks: int = 0) -> DataLoader:
+def split_sources(phase: int, split: Literal["train", "test"], config: dict) -> list[str]:
+    """Source subfolders of a mixed split; [] when the split is a single folder."""
+    return source_names(_dataset_dirs(config, phase, split))
+
+def source_mix(phase: int, config: dict) -> dict[str, float]:
+    """Each source's share of the training blocks, read from train/<source>/manifest.json."""
+    train_dir = Path(_dataset_dirs(config, phase, "train"))
+    blocks = {}
+    for name in source_names(train_dir):
+        with open(train_dir / name / "manifest.json") as f:
+            blocks[name] = json.load(f)["total_blocks"]
+    total = sum(blocks.values())
+    return {name: n / total for name, n in blocks.items()}
+
+def set_dataloader(phase: Literal[1, 2, 3], split: Literal["train", "test"], config: dict, epoch: int = 0, skip_blocks: int = 0, source: str | None = None) -> DataLoader:
     """
     Set up the DataLoader for the specified phase and split.
 
@@ -82,6 +96,7 @@ def set_dataloader(phase: Literal[1, 2, 3], split: Literal["train", "test"], con
         config: Configuration dictionary.
         epoch: Epoch number; seeds the shuffle order.
         skip_blocks: Number of blocks to skip per worker when resuming.
+        source: read just this source subfolder instead of the whole mix (per-source eval).
 
     Returns:
         DataLoader instance for the specified dataset.
@@ -93,7 +108,12 @@ def set_dataloader(phase: Literal[1, 2, 3], split: Literal["train", "test"], con
     is_train_split: bool = (split == "train")
     
     if phase in (1, 2):
-        dataset = Phase_1_2_Dataset(ds_dir, shuffle= is_train_split, seed= seed, epoch= epoch, skip_blocks= skip_blocks)
+        # If the split is a single folder, use it.
+        if (Path(ds_dir) / "manifest.json").exists():
+            dataset = Phase_1_2_Dataset(ds_dir, shuffle= is_train_split, seed= seed, epoch= epoch, skip_blocks= skip_blocks)
+        else:
+            # If the split is mixed, use the mixed datasets dataloader
+            dataset = MixedDatasets(ds_dir, shuffle= is_train_split, seed= seed, epoch= epoch, skip_blocks= skip_blocks)
         collate_fn = dataset.collate
     
     elif phase == 3:
