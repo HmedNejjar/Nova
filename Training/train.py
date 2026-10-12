@@ -185,8 +185,6 @@ def run_eval(model: nn.Module, config: dict, state: TrainState, train_cfg: Train
         eval_res = evaluate(model, test_dl, train_cfg.EVAL_BATCHES, train_cfg.AMP_DTYPE, train_cfg.DEVICE, train_cfg.PHASE)
         del test_dl
         
-    eval_res = evaluate(model, test_dl, train_cfg.EVAL_BATCHES, train_cfg.AMP_DTYPE, train_cfg.DEVICE, train_cfg.PHASE)
-    del test_dl
     eval_res["samples"] = sample_generations(model, DEFAULT_PROMPTS[train_cfg.PHASE], train_cfg.DEVICE)
     append_jsonl(train_cfg.eval_log, {"step": state.step, **eval_res})
     tqdm.write(f"[eval {state.step}] loss {eval_res['loss']:.4f}  ppl {eval_res['perplexity']:.2f}")

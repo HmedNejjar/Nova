@@ -103,6 +103,8 @@ def set_dataloader(phase: Literal[1, 2, 3], split: Literal["train", "test"], con
     """
     training_cfg = config["Train"]
     ds_dir = _dataset_dirs(config, phase, split)
+    if source is not None:
+        ds_dir = str(Path(ds_dir) / source)
     seed = int(training_cfg.get("seed", 67))
     
     is_train_split: bool = (split == "train")
