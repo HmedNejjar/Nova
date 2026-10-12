@@ -203,6 +203,88 @@ class Phase_1_2_Dataset(IterableDataset):
             "doc_ids": doc_ids,
         }
 
+# Phase 2 Dataloader
+def source_names(split_dir: str | Path) -> list[str]:
+    """Source subfolders of a mixed split dir (Phase 2); [] for a single-folder split (Phase 1)."""
+    split_dir = Path(split_dir)
+    if (split_dir / "manifest.json").exists():
+        return []
+    return sorted(p.name for p in split_dir.iterdir() if (p / "manifest.json").exists())
+
+class MixedDatasets(IterableDataset):
+    """
+    Phase 2: mixes the per-source folders written by prepare_phase2.py
+    (<split>/<source>/manifest.json), block by block.
+
+    Each next block comes from a source picked with probability proportional to
+    the blocks it still has left (in this worker). That is the same as one
+    uniform shuffle over all sources' blocks: the mix follows the source sizes
+    (= sources.yaml target_tokens) all the way through, every source runs out
+    at the same moment, and every block is used exactly once per epoch.
+    """
+    def __init__(self, root: str | Path, shuffle: bool = True, seed: int = 21, epoch: int = 0, skip_blocks: int = 0) -> None:
+        super().__init__()
+        self.root = Path(root)
+        self.names = source_names(self.root)
+        if not self.names:
+            raise FileNotFoundError(f"no source folders with a manifest.json under {self.root}")
+        
+        # Each source keeps its own shard/block shuffle; offset seeds so sources don't share an order
+        self.sources = [Phase_1_2_Dataset(self.root / name, shuffle, seed= 21, epoch= epoch, skip_blocks= skip_blocks) for i, name in enumerate(self.names)]
+        
+        self.seq_len = self.sources[0].seq_len
+        self.pad_id = self.sources[0].pad_id
+        if any(s.seq_len != self.seq_len or s.pad_id != self.pad_id for s in self.sources):
+            raise ValueError("all sources must share seq_len and pad_id")
+
+        self.seed = seed
+        self.epoch = epoch
+        # Blocks each worker skips at the start of this epoch (resuming mid-epoch)
+        self.skip_blocks = skip_blocks
+        
+    def set_epoch(self, epoch: int) -> None:
+       self.epoch = epoch
+       self.skip_blocks = 0
+       for s in self.sources:
+           s.set_epoch(epoch)
+           
+    def _pick_order(self, remaining: np.ndarray, rng: np.random.Generator) -> Generator[int, None, None]:
+        """Yields source indices, each picked with probability proportional to its remaining blocks."""
+        remaining = remaining.copy()
+        total = int(remaining.sum())
+        while total > 0:
+            i = int(np.searchsorted(np.cumsum(remaining), rng.random() * total, side="right"))
+            remaining[i] -= 1
+            total -= 1
+            yield i
+
+    def __iter__(self):
+        info = get_worker_info()
+        worker_id = info.id if info is not None else 0
+        # Blocks of each source in this worker's shard slice
+        counts = np.array([sum(int(e["num_blocks"]) for e in s._worker_shard_list()) for s in self.sources])
+        rng = np.random.default_rng([self.seed, self.epoch, worker_id, 1])
+        order = self._pick_order(counts, rng)
+
+        # Resume: replay the first skip_blocks picks (no data is read) to learn
+        # how many blocks each source already gave, then let each source skip those
+        skipped = np.zeros(len(self.sources), dtype=np.int64)
+        for _ in range(self.skip_blocks):
+            i = next(order, None)
+            if i is None:
+                return
+            skipped[i] += 1
+        for s, k in zip(self.sources, skipped):
+            s.skip_blocks = int(k)
+
+        streams = [iter(s) for s in self.sources]
+        for i in order:
+            yield next(streams[i])
+
+    def collate(self, batch: list) -> dict:
+        # Every source shares seq_len and pad_id, so any of them collates the mixed batch
+        return self.sources[0].collate(batch)
+        
 class Phase_3_ShardManifest:
     def __init__(self, split_dir: str | Path) -> None:
         self.split_dir = Path(split_dir)

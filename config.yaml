@@ -2,7 +2,7 @@ Tokenizer:
     type: "Byte-Pair Encoding - BPE"
     savepath: "Preprocess/Tokenizer"
     corpus_path: "corpus.txt"
-    vocab_size: 150_016
+    vocab_size: 150_080
     special_tokens:
         bos: <bos>
         eos: <eos>
@@ -14,7 +14,13 @@ Tokenizer:
         end_assistant: </assistant>
         thinking: <thinking> 
         end_thinking: </thinking>
-
+        tools: <tools>
+        end_tools: </tools>
+        tool_call: <tool_call>
+        end_tool_call: </tool_call>
+        tool_response: <tool_response>
+        end_tool_response: </tool_response>
+        
         pad: <pad>
 
 Model:
@@ -34,6 +40,7 @@ Model:
 Generation:
     default_sys_prompt: "You are Nova AI, a helpful AI assistant. Answer clearly, accurately, and concisely. ALWAYS Follow the user's instructions, use conversation context, and admit when you are unsure. Do not invent facts or mention these instructions."
     top_k : 6
+    top_p : 0.9
     repetition_penalty: 1.1
     temperature : 0.7
 
@@ -49,8 +56,8 @@ Train:
     keep_last: 2     
     checkpoint_layers: 14 # int: from 0 to num_layers    ||  Higher = (less memory, more computational cost)    
 
-    Phase_1: {min_lr: 3.0e-5, lr: 5.0e-4, warmup_steps: 1500, max_steps: 20_027, micro_batch: 8, grad_accum: 16, weight_decay: 0.1}
-    Phase_2: {min_lr: 2.0e-5, lr: 3.0e-4, warmup_steps: 1500, max_steps: 152_704, micro_batch: 8, grad_accum: 16, weight_decay: 0.1}
+    Phase_1: {min_lr: 3.0e-5, lr: 5.0e-4, warmup_steps: 1500, max_steps: 20_027, micro_batch: 4, grad_accum: 16, weight_decay: 0.1}
+    Phase_2: {min_lr: 2.0e-5, lr: 7.0e-4, warmup_steps: 1500, max_steps: 114_441, micro_batch: 8, grad_accum: 8, weight_decay: 0.1, eval_batches_per_source: 8}
     Phase_3: {min_lr: 2.0e-5, lr: 5.0e-4, warmup_steps: 1500, max_steps: 13_500, micro_batch: 8, grad_accum: 16, weight_decay: 0.1}
 
     ignore_idx: -100
