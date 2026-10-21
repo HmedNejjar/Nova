@@ -51,3 +51,8 @@ class ModelError(StopRunError):
     """Raised when the model call fails (rate limit, timeout, auth, ...)."""
     
     default_message = "The model call failed."
+    
+# --- Tool Definition Errors ---
+class ToolDefinitionError(HarnessError):
+    """A tool is defined incorrectly (raised at decoration time)."""
+    default_message = "The tool definition is invalid."
