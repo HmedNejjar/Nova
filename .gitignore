@@ -1,0 +1,15 @@
+# packaging
+*.egg-info/
+build/
+dist/
+
+# python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# tools
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/

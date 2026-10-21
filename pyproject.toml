@@ -1,0 +1,52 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "Nova-Harness"
+version = "1.0.0"
+description = "A simple harness compatible with LiteLLM models."
+readme = "README.md"
+requires-python = ">=3.10"   # needed for `X | Y` hints and types.UnionType
+license = { text = "MIT" }
+authors = [{ name = "Marhfoul Bakr" }]
+dependencies = [
+    "litellm>=1.40",
+    "pydantic>=2.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.5",
+    "mypy>=1.10",
+]
+
+# --- Packaging: src/ layout ---------------------------------------------------
+# Only folders with an __init__.py are found (harness, harness.models,
+# harness.tools, harness.tools.builtin).
+[tool.setuptools.packages.find]
+where = ["src"]
+
+# --- pytest -------------------------------------------------------------------
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src", "tests"]   # works even without `pip install -e`; lets tests import fakes
+addopts = "-ra"
+
+# --- ruff (lint + import sorting) ---------------------------------------------
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+
+# --- mypy (checks Protocol conformance, e.g. FakeModelClient vs ModelClient) ---
+[tool.mypy]
+python_version = "3.10"
+files = ["src", "tests"]
+strict = false
+warn_unused_ignores = true
+disallow_untyped_defs = true
