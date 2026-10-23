@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from typing import Any, Literal
 
-Role = Literal["user", "assistant", "tool"]
+Role = Literal["user", "assistant", "tool", "system"]
 Status = Literal["ok", "error", "denied"]
 
 @dataclass(frozen=True)
@@ -60,7 +60,7 @@ class Message:
     tool_call_id: str | None = None
     
     def __post_init__(self):
-        if self.role == "user":
+        if self.role == "user" or self.role == "system":
             if self.content is None or self.tool_calls or self.tool_call_id is not None:
                 raise ValueError("User messages must have content only.")
         
@@ -69,6 +69,7 @@ class Message:
                 raise ValueError("assistant message needs content or tool_calls")
             if self.tool_call_id is not None:
                 raise ValueError("assistant message cannot have tool_call_id")
+                   
         else:  # tool
             if self.content is None or self.tool_call_id is None:
                 raise ValueError("tool message needs content and tool_call_id")
@@ -86,5 +87,11 @@ class Message:
     @classmethod
     def tool(cls, result: ToolResult) -> "Message":
         return cls(role="tool", content= result.tool_result, tool_call_id=result.tool_id)
+    
+    @classmethod
+    def system(cls, content: str) -> "Message":
+        return cls(role="system", content=content)
+    
+    
     
     
