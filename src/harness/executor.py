@@ -3,10 +3,9 @@ import inspect
 import json
 import time
 from threading import Thread
-from typing import Any, Callable, Mapping, get_type_hints
+from typing import Any, Mapping, get_type_hints
 from pydantic import TypeAdapter, ValidationError
 from .messages import ToolCall, ToolResult
-from .policies import Decision
 from .errors import InvalidArgumentsError, ToolExecutionError, ToolNotFoundError, ToolError
 from tools.tool import Tool
 
