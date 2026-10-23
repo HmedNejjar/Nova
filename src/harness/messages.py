@@ -60,7 +60,7 @@ class Message:
     tool_call_id: str | None = None
     
     def __post_init__(self):
-        if self.role == "user" or self.role == "system":
+        if self.role in ("user", "system"):
             if self.content is None or self.tool_calls or self.tool_call_id is not None:
                 raise ValueError("User messages must have content only.")
         
