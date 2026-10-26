@@ -42,7 +42,7 @@ class ModelResponse:
     """One normalized model turn: text, tool calls, or both."""
     
     response: str | None = None
-    tool_calls: tuple[ToolCall, ...] = ()
+    tool_calls: tuple[ToolCall, ...] | None = None
     
 @dataclass(frozen=True)
 class Message:
@@ -56,7 +56,7 @@ class Message:
     
     role: Role
     content: str | None = None
-    tool_calls: tuple[ToolCall, ...] = ()
+    tool_calls: tuple[ToolCall, ...] | None = None
     tool_call_id: str | None = None
     
     def __post_init__(self):
