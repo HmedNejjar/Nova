@@ -22,6 +22,7 @@ class ToolCall:
     tool_name: str
     tool_id: str
     tool_args: dict[str, Any]
+    arg_error: str | None = None
     
 @dataclass(frozen=True)
 class ToolResult:

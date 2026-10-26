@@ -55,6 +55,8 @@ class Executor:
         JSON shapes into the annotated types, e.g. a list into set[int].
         """
         name = tool_call.tool_name
+        if tool_call.arg_error:
+            raise InvalidArgumentsError(f"{name}: {tool_call.arg_error}")
         spec = self._arg_spec(tool)
         given = tool_call.tool_args
 
