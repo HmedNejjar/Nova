@@ -3,7 +3,7 @@
 import time
 import pytest
 
-from harness.errors import InvalidArgumentsError, ToolError, ToolExecutionError, ToolNotFoundError,
+from harness.errors import InvalidArgumentsError, ToolError, ToolExecutionError, ToolNotFoundError
 from harness.executor import Executor
 from harness.messages import ToolCall
 from tools.tool import tool
