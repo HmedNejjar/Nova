@@ -57,10 +57,14 @@ class Runtime:
         """Handle a tool call."""
         
         # Check if the tool exists
-        if call.tool_name not in self.tool_registry:
+        if call.tool_name not in self.tool_registry:          
             # list all tools available
             available = "; ".join(sorted(self.tool_registry))
             return ToolResult(tool_name=call.tool_name, tool_id=call.tool_id, status="error", tool_result=f"Tool {call.tool_name} not found, available tools: {available}")
+        
+        # Check for argument errors
+        if call.arg_error:
+            return ToolResult(tool_name=call.tool_name, tool_id=call.tool_id, status="error", tool_result=f"{call.tool_name}: {call.arg_error}")
         
         # Check policy
         decision = self.policy.evaluate(call)
