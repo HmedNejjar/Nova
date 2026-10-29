@@ -43,9 +43,16 @@ class Runtime:
                 return response.response or ""
             
             # Process the tool calls
-            for call in response.tool_calls:
-                
-                result = self.handle(call, denials)
+            for i, call in enumerate(response.tool_calls):
+                try:
+                    result = self.handle(call, denials)
+                except BaseException:
+                    # Every tool call needs a result, or the provider rejects the history on the next run.
+                    for left in response.tool_calls[i:]:
+                        state.add(Message.tool(ToolResult(
+                            tool_name=left.tool_name, tool_id=left.tool_id,
+                            status="error", tool_result="Not run: the run was stopped.")))
+                    raise
                 
                 # Add the tool response to the conversation history
                 state.add(Message.tool(result= result))

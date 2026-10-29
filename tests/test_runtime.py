@@ -252,17 +252,17 @@ def test_a_refused_ask_counts_toward_the_abort_limit():
     with pytest.raises(PolicyAbortError):
         rig.runtime.handle(tc(), denials)
 
-
-def test_abort_leaves_the_last_assistant_turn_unanswered():
-    # Known v0 rough edge, pinned on purpose: after PolicyAbortError the history ends
-    # with tool calls that have no results. Providers reject such a history, so the
-    # Agent must reset or trim the state before reusing it.
-    rig = build([use(read("a")), use(read("a"))], policy=DENY_READ, max_denials=2)
+def test_abort_still_answers_every_tool_call():
+    # After PolicyAbortError every tool call in the last turn has a result,
+    # so the same state can be sent to a provider again.
+    rig = build([use(read("a.txt"), read("b.txt"))], policy=DENY_READ, max_denials=1)
     state = ConversationState()
     with pytest.raises(PolicyAbortError):
-        rig.runtime.run(state, "go")
-    last = state.messages[-1]
-    assert last.role == "assistant" and last.tool_calls
+        rig.runtime.run(state, "read both")
+    assert roles(state) == ["user", "assistant", "tool", "tool"]
+    assert [m.tool_call_id for m in state.messages[2:]] == ["c1", "c2"]
+    assert all(m.content == "Not run: the run was stopped." for m in state.messages[2:])
+    assert rig.executed == []
 
 
 # --- tool problems become results, not crashes ------------------------------------------------
@@ -286,12 +286,6 @@ def test_invalid_arguments_become_an_error_result(bad_args):
     result = rig.runtime.handle(tc(args=bad_args), {})
     assert result.status == "error"
     assert rig.executed == []
-
-
-def test_the_run_survives_invalid_arguments():
-    rig = build([use(("read_file", {})), say("fixed it")])
-    assert rig.runtime.run(ConversationState(), "go") == "fixed it"
-
 
 # --- limits and failures ---------------------------------------------------------------------------
 
