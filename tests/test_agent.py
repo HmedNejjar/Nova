@@ -4,7 +4,7 @@ from types import SimpleNamespace as NS
 
 import pytest
 from fakes import FakeApprover, FakeModelClient
-
+from harness._prompts import BASE, MEMORY
 from harness.agent import MEMORY_TOOLS, Agent
 from harness.approval import CLIApprover
 from harness.memory import MemoryStore
@@ -251,3 +251,20 @@ def test_model_name_builds_a_litellm_client(monkeypatch, make):
 def test_default_approver_is_the_cli_approver(store, tmp_path):
     agent = Agent(FakeModelClient([]), memory=store, root=tmp_path)
     assert isinstance(agent._approver, CLIApprover)
+
+def test_default_prompt_has_the_memory_section_only_with_memory(make):
+    assert MEMORY in make().state.messages[0].content
+    content = make(memory=False).state.messages[0].content
+    assert content.startswith(BASE)
+    assert MEMORY not in content
+
+
+def test_instructions_are_added_to_the_default_prompt(make):
+    content = make(instructions="Answer in French.").state.messages[0].content
+    assert content.startswith(BASE)
+    assert content.endswith("## Additional instructions\nAnswer in French.")
+
+
+def test_system_prompt_replaces_the_default(make):
+    content = make(system_prompt="Custom.", instructions="ignored").state.messages[0].content
+    assert content == "Custom."

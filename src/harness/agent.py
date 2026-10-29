@@ -12,16 +12,18 @@ from tools.registry import ToolRegistry
 from .state import ConversationState
 from .memory import MemoryStore, make_memory_tools
 from tools.default_tools import default_tools, default_policy, SearchFn
+from ._prompts import build_system_prompt
+
 
 Rules = dict[str, Action]
 
 MEMORY_TOOLS = frozenset({"save_to_memory", "delete_from_memory"})
-DEFAULT_SYS_PROMPT = "" #TODO: Write a default system prompt.
+
 
 class Agent:
     def __init__(self, model: str | ModelClient, tools: Iterable[Tool] = (), policy: Policy | Rules | None = None, *, deflt_tools: bool = True, root: str | Path = ".",
-                 search_fn: SearchFn | None = None, memory: MemoryStore | bool = True, approver: ToolApprover | None = None, system_prompt: str | None = None, max_steps: int = 20,
-                 max_denials: int = 3,tool_timeout: float = 30.0, **model_kwargs: Any) -> None:
+                 search_fn: SearchFn | None = None, memory: MemoryStore | bool = True, approver: ToolApprover | None = None, system_prompt: str | None = None, instructions: str | None = None,
+                 max_steps: int = 20, max_denials: int = 3,tool_timeout: float = 30.0, **model_kwargs: Any) -> None:
         
         # 1. Set Model client
         if isinstance(model, str):
@@ -58,7 +60,10 @@ class Agent:
         # 5. Runtime
         self._approver = approver if approver is not None else CLIApprover()
         self._executor = Executor(self.tools, timeout= tool_timeout)
-        self.system_prompt = system_prompt if system_prompt else DEFAULT_SYS_PROMPT
+        if system_prompt is not None:
+            self.system_prompt = system_prompt
+        else:
+            self.system_prompt = build_system_prompt(memory=self.memory is not None, instructions=instructions)
         
         self.runtime = Runtime(self.model, self.tools, self._executor, self.policy, self._approver, max_steps, max_denials)
         
