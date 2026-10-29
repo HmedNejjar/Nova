@@ -47,7 +47,7 @@ MAX_HITS = 50
 MAX_SEARCH_FILE_BYTES = 1_000_000
 SKIP_DIRS = {".git", "__pycache__", ".venv", "venv", "node_modules"}
 
-MAX_COMMAND_LEN = 200  # Approver.describe() cuts args at 200: what is approved is what runs
+MAX_COMMAND_LEN = 200  # Approver.describe() shows each arg up to 200 chars: what is approved is what runs
 COMMAND_TIMEOUT = 25  # below the Executor's 30s, so this clean message fires first
 MAX_COMMAND_OUTPUT = 20_000
 _SECRET_HINTS = ("KEY", "TOKEN", "SECRET", "PASSWORD", "CREDENTIAL")

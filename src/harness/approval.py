@@ -32,14 +32,21 @@ class ToolApprover:
     def describe(self, tool_call: ToolCall, reason: str | None = None, max_len: int = 200) -> str:
         """Return a human-readable description of the approval decision."""
         
-        args = json.dumps(tool_call.tool_args, default=str, ensure_ascii=False)
-        if len(args) > max_len:
-            args = args[: max_len - 3] + "..."
-            
         lines = [f"Tool '{tool_call.tool_name}' requires approval."]
         if reason:
             lines.append(f"  reason: {reason}")
-        lines.append(f"  args:   {args}")
+        if not tool_call.tool_args:
+            lines.append("  args:   (none)")
+
+        # Cut each value, not the whole JSON: a value of up to max_len chars is shown in full,
+        # so what the human approves is exactly what runs. json.dumps escapes newlines, so a
+        # value can't fake extra lines in the prompt.
+        for name, value in tool_call.tool_args.items():
+            raw = value if isinstance(value, str) else json.dumps(value, default=str, ensure_ascii=False)
+            text = json.dumps(raw[:max_len], ensure_ascii=False)
+            if len(raw) > max_len:
+                text += f" ... [truncated: {len(raw):,} chars total]"
+            lines.append(f"  {name}: {text}")
         return "\n".join(lines)
         
 class CLIApprover(ToolApprover):
@@ -106,7 +113,8 @@ class CLIApprover(ToolApprover):
     @staticmethod
     def _render(text: str, up: int) -> None:
         """Rewrite the countdown line in place, then put the cursor back where the human is typing."""
-        print(f"{_SAVE}\x1b[{up}A\r{_CLEAR}{text}{_RESTORE}")
+        # end="": a newline after _RESTORE would move the cursor off the answer line.
+        print(f"{_SAVE}\x1b[{up}A\r{_CLEAR}{text}{_RESTORE}", end="", flush=True)
         
     def _read_line(self) -> str | None:
         """One line from the human, or None on timeout, EOF, or error."""
@@ -132,7 +140,7 @@ class CLIApprover(ToolApprover):
         # 3. Wait for the answer, redrawing the countdown each second.
         deadline = time() + self.timeout
         while (remaining := deadline - time()) > 0:
-            self._render(self._countdown(remaining), 0)
+            self._tick(remaining)
             try:
                 answer = self._answers.get(timeout=min(1.0, remaining))
             except QueueEmpty:
@@ -154,10 +162,11 @@ class CLIApprover(ToolApprover):
     def _show(self, tool_call: ToolCall, reason: str | None) -> None:
         """Print the question ourselves: a pending read can't print a new prompt."""
         text = self.describe(tool_call, reason)
+        # end="": the cursor stays after the question, one line below the countdown.
         if self._live:
-            print(f"{text}\n{self._countdown(self.timeout)}\n{self.QUESTION}")
+            print(f"{text}\n{self._countdown(self.timeout)}\n{self.QUESTION}", end="", flush=True)
         else:
-            print(f"{text}\n{self.QUESTION}")
+            print(f"{text}\n{self.QUESTION}", end="", flush=True)
  
     def _tick(self, remaining: float) -> None:
         if self._live:

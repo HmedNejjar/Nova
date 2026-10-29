@@ -151,10 +151,7 @@ class MemoryStore:
     def last_n(self, n: int | None = 5, memory_type: str = "notes") -> dict[str, str]:
         """The n most recently saved or updated entries, newest first.
         
-        If `n` is None, return all entries."""
-        if memory_type not in self._TABLES.keys():
-            raise InvalidArgumentsError(f"Memory type must be in {list(self._TABLES.keys())}")
-        
+        If `n` is None, return all entries."""       
         table, _ = self._table_config(memory_type)
         
         if n is None:
@@ -174,7 +171,7 @@ class MemoryStore:
         sections: list[str] = []
         for name, spec in self._TABLES.items():
             entries = (
-                self.last_n(LAST_N_LIMIT, name)
+                self.last_n(spec.prompt_limit, name)
                 if spec.prompt_limit is not None
                 else self.all(name)
             )
@@ -191,13 +188,15 @@ class MemoryStore:
     
 def make_memory_tools(store: MemoryStore) -> list[Tool]:
     @tool
-    def save_to_memory(key: str, value: str) -> str:
+    def save_to_memory(key: str, value: str, memory_type: str = "facts") -> str:
         """Save a durable fact about the user, e.g. key='name', value='John'. Saving the same key again overwrites it."""
-        store.save(key, value)
+        store.save(key, value, memory_type)
         return f"saved {key}: {value}"
     @tool
-    def delete_from_memory(key: str) -> str:
+    def delete_from_memory(key: str, memory_type: str = "facts") -> str:
         """Delete a saved fact about the user."""
-        return f"forgot {key}" if store.delete(key) else f"no fact named {key}"
+        if store.delete(key, memory_type):
+            return f"forgot {memory_type} {key}"
+        return f"no {memory_type} entry named {key}"
     return [save_to_memory, delete_from_memory]
         

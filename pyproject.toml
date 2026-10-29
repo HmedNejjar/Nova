@@ -23,8 +23,7 @@ dev = [
 ]
 
 # --- Packaging: src/ layout ---------------------------------------------------
-# Only folders with an __init__.py are found (harness, harness.models,
-# harness.tools, harness.tools.builtin).
+# Only folders with an __init__.py are found: harness, models, tools.
 [tool.setuptools.packages.find]
 where = ["src"]
 
