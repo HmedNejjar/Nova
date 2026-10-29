@@ -111,6 +111,7 @@ class LiteLLMClient:
     def __init__(self, model: str, *, temperature: float | None = None, max_tokens: int | None = None, timeout: float | None = 60.0, num_retries: int = 2, **extra: Any) -> None:  # extra is for api_base, api_key, ... passed straight to litellm.completion)
         try:
             import litellm  # lazy: `import harness` stays fast, and tests need no litellm
+            litellm.suppress_debug_info = True
         except ImportError as e:
             raise ImportError("LiteLLMClient needs: pip install litellm") from e
         self._litellm = litellm

@@ -1,6 +1,10 @@
 """The default system prompt. Tool specs are not listed here: they reach the model
 through the provider's native `tools` parameter."""
 
+import os
+import platform
+from pathlib import Path
+
 BASE = """\
 You are an assistant that solves tasks step by step, using tools when they help.
 
@@ -30,9 +34,19 @@ worth keeping. Never save secrets such as passwords or API keys. When there is s
 memory, it appears at the end of this prompt."""
 
 
-def build_system_prompt(*, memory: bool = True, instructions: str | None = None) -> str:
-    """The base prompt, the memory section if memory is on, then the caller's instructions."""
-    parts = [BASE]
+def _environment(root: Path) -> str:
+    shell = "cmd.exe" if os.name == "nt" else "/bin/sh"
+    return f"""\
+## Environment
+- Workspace folder: {root}
+- Operating system: {platform.system()} {platform.release()}
+- run_command shell: {shell}
+File tool paths are relative to the workspace folder; use "." for the workspace itself."""
+
+
+def build_system_prompt(*, root: Path, memory: bool = True, instructions: str | None = None) -> str:
+    """The base prompt, the environment, the memory section if memory is on, then the caller's instructions."""
+    parts = [BASE, _environment(root)]
     if memory:
         parts.append(MEMORY)
     if instructions and instructions.strip():

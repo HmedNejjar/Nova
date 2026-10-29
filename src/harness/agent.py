@@ -63,7 +63,7 @@ class Agent:
         if system_prompt is not None:
             self.system_prompt = system_prompt
         else:
-            self.system_prompt = build_system_prompt(memory=self.memory is not None, instructions=instructions)
+            self.system_prompt = build_system_prompt(root=Path(root), memory=self.memory is not None, instructions=instructions)
         
         self.runtime = Runtime(self.model, self.tools, self._executor, self.policy, self._approver, max_steps, max_denials)
         
