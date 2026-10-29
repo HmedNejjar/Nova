@@ -46,6 +46,12 @@ class Policy:
     def override(self, new_rules: dict[str, Action]) -> "Policy":
         """Override the policy with new rules for each tool in new_rules
             where `new_rules` is a dict of tool_name -> action."""
+        # 1. Check for unknown actions.
+        bad = sorted(n for n, act in new_rules.items() if act not in _RANK)
+        if bad:
+            raise ValueError(f"unknown action for {bad}; expected one of {list(_RANK)}")
+        
+        # 2. Return the new policy.
         names = frozenset(new_rules)
         by_action = {a: frozenset(n for n, act in new_rules.items() if act == a) for a in _RANK}
         return Policy(allow=(self.allow - names) | by_action["allow"],
