@@ -268,3 +268,6 @@ def test_instructions_are_added_to_the_default_prompt(make):
 def test_system_prompt_replaces_the_default(make):
     content = make(system_prompt="Custom.", instructions="ignored").state.messages[0].content
     assert content == "Custom."
+    
+def test_empty_system_prompt_sends_no_system_message(make):
+    assert len(make(system_prompt="", memory=False).state) == 0

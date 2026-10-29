@@ -189,12 +189,12 @@ class MemoryStore:
 def make_memory_tools(store: MemoryStore) -> list[Tool]:
     @tool
     def save_to_memory(key: str, value: str, memory_type: str = "facts") -> str:
-        """Save a durable fact about the user, e.g. key='name', value='John'. Saving the same key again overwrites it."""
+        """Save an info about the user, e.g. key='name', value='John'. Saving the same key again overwrites it."""
         store.save(key, value, memory_type)
         return f"saved {key}: {value}"
     @tool
     def delete_from_memory(key: str, memory_type: str = "facts") -> str:
-        """Delete a saved fact about the user."""
+        """Delete a saved info about the user."""
         if store.delete(key, memory_type):
             return f"forgot {memory_type} {key}"
         return f"no {memory_type} entry named {key}"

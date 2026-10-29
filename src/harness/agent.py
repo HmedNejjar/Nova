@@ -74,8 +74,8 @@ class Agent:
         """Start a new conversation, with saved memory read fresh into the system prompt."""
         prompt = self.system_prompt
         if self.memory is not None and (saved := self.memory.as_prompt()):
-            prompt += "\n\n" + saved
-        self.state = ConversationState([Message.system(prompt)])
+            prompt = f"{prompt}\n\n{saved}" if prompt else saved
+        self.state = ConversationState([Message.system(prompt)] if prompt else [])
         
     def run(self, prompt: str) -> str:
         """Run the conversation with the given prompt."""
