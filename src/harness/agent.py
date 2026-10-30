@@ -21,7 +21,7 @@ MEMORY_TOOLS = frozenset({"save_to_memory", "delete_from_memory"})
 
 
 class Agent:
-    def __init__(self, model: str | ModelClient, tools: Iterable[Tool] = (), policy: Policy | Rules | None = None, *, deflt_tools: bool = True, root: str | Path = ".",
+    def __init__(self, model: str | ModelClient, tools: Iterable[Tool] = (), policy: Policy | Rules | None = None, *, use_default_tools: bool = True, root: str | Path = ".",
                  search_fn: SearchFn | None = None, memory: MemoryStore | bool = True, approver: ToolApprover | None = None, system_prompt: str | None = None, instructions: str | None = None,
                  max_steps: int = 20, max_denials: int = 3,tool_timeout: float = 30.0, **model_kwargs: Any) -> None:
         
@@ -39,7 +39,7 @@ class Agent:
             self.memory = MemoryStore() if memory else None
         
         # 3. Tools: defaults, then memory's, then the caller's
-        self.tools = ToolRegistry(default_tools(root, search_fn) if deflt_tools else ())
+        self.tools = ToolRegistry(default_tools(root, search_fn) if use_default_tools else ())
 
             # Register memory tools
         if self.memory is not None:
