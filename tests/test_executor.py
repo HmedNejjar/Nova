@@ -3,10 +3,10 @@
 import time
 import pytest
 
-from harness.errors import InvalidArgumentsError, ToolError, ToolExecutionError, ToolNotFoundError
-from harness.executor import Executor
-from harness.messages import ToolCall
-from tools.tool import tool
+from NovaHarness.harness.errors import InvalidArgumentsError, ToolError, ToolExecutionError, ToolNotFoundError
+from NovaHarness.harness.executor import Executor
+from NovaHarness.harness.messages import ToolCall
+from NovaHarness.tools.tool import tool
 
 
 def call(name: str, args: dict | None = None) -> ToolCall:

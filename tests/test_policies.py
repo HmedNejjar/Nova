@@ -1,5 +1,5 @@
-from harness.messages import ToolCall
-from harness.policies import Policy
+from NovaHarness.harness.messages import ToolCall
+from NovaHarness.harness.policies import Policy
 
 
 def call(name: str) -> ToolCall:

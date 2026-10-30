@@ -1,7 +1,7 @@
 import time
-from harness.approval import CLIApprover
-from harness.messages import ToolCall
-from harness.approval import CLIApprover
+from NovaHarness.harness.approval import CLIApprover
+from NovaHarness.harness.messages import ToolCall
+from NovaHarness.harness.approval import CLIApprover
 
 def test_late_answer_never_approves_the_next_question():
     script = iter([(0.3, "y"), (0.0, "n")])   # (delay, answer) per read

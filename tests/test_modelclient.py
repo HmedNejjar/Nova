@@ -5,9 +5,9 @@ from types import SimpleNamespace as NS
 
 import pytest
 
-from harness.errors import ModelError
-from harness.messages import Message, ModelResponse, ToolCall, ToolResult, ToolSpec
-from models.modelClient import LiteLLMClient, _parse_arguments, _to_model_response, _to_provider_message, _to_provider_tool
+from NovaHarness.harness.errors import ModelError
+from NovaHarness.harness.messages import Message, ModelResponse, ToolCall, ToolResult, ToolSpec
+from NovaHarness.models.modelClient import LiteLLMClient, _parse_arguments, _to_model_response, _to_provider_message, _to_provider_tool
 
 
 def reply(content=None, tool_calls=None):

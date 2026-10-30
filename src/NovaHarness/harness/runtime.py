@@ -4,8 +4,8 @@ from .executor import Executor
 from .state import ConversationState
 from .approval import ToolApprover
 from .messages import Message, ToolCall, ToolResult
-from tools.registry import ToolRegistry
-from models.base import ModelClient
+from NovaHarness.tools.registry import ToolRegistry
+from NovaHarness.models.base import ModelClient
 import json
 
 DenialCounts = dict[tuple[str, str], int] # (tool name, canonical args) -> times denied

@@ -5,7 +5,7 @@ from contextlib import closing
 from pathlib import Path
 from datetime import datetime, timezone
 
-from tools.tool import Tool, tool
+from NovaHarness.tools.tool import Tool, tool
 from .errors import InvalidArgumentsError, ToolExecutionError
 
 MEMORY_DB_PATH = Path.home() / ".nova_harness" / "memory.db"

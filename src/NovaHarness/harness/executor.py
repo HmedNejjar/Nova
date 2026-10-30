@@ -7,7 +7,7 @@ from typing import Any, Mapping, get_type_hints
 from pydantic import TypeAdapter, ValidationError
 from .messages import ToolCall, ToolResult
 from .errors import InvalidArgumentsError, ToolExecutionError, ToolNotFoundError, ToolError
-from tools.tool import Tool
+from NovaHarness.tools.tool import Tool
 
 
 @dataclass(frozen=True)

@@ -6,15 +6,15 @@ from typing import Any
 import pytest
 from fakes import FakeApprover, FakeModelClient
 
-from harness.approval import ToolApprover
-from harness.errors import MaxStepsReachedError, ModelError, PolicyAbortError
-from harness.executor import Executor
-from harness.messages import ModelResponse, ToolCall
-from harness.policies import Policy
-from harness.runtime import Runtime
-from harness.state import ConversationState
-from tools.registry import ToolRegistry
-from tools.tool import tool
+from NovaHarness.harness.approval import ToolApprover
+from NovaHarness.harness.errors import MaxStepsReachedError, ModelError, PolicyAbortError
+from NovaHarness.harness.executor import Executor
+from NovaHarness.harness.messages import ModelResponse, ToolCall
+from NovaHarness.harness.policies import Policy
+from NovaHarness.harness.runtime import Runtime
+from NovaHarness.harness.state import ConversationState
+from NovaHarness.tools.registry import ToolRegistry
+from NovaHarness.tools.tool import tool
 
 DENY_READ = Policy(deny=frozenset({"read_file"}))
 ASK_READ = Policy(ask=frozenset({"read_file"}))
@@ -95,6 +95,7 @@ def build(
         approver=approver,
         max_steps=max_steps,
         max_denials=max_denials,
+        final_answer=final_answer,
     )
     return Rig(runtime, model, approver, executed)
 

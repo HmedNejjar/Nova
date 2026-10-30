@@ -2,7 +2,7 @@
 
 from collections.abc import Iterable
 
-from harness.messages import Message, ModelResponse, ToolCall, ToolSpec
+from NovaHarness.harness.messages import Message, ModelResponse, ToolCall, ToolSpec
 
 
 class FakeModelClient:

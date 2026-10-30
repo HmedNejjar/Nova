@@ -1,10 +1,10 @@
 import pytest
 
-from harness.errors import ToolDefinitionError
-from harness.executor import Executor
-from harness.messages import ToolCall
-from tools.registry import ToolRegistry
-from tools.tool import tool
+from NovaHarness.harness.errors import ToolDefinitionError
+from NovaHarness.harness.executor import Executor
+from NovaHarness.harness.messages import ToolCall
+from NovaHarness.tools.registry import ToolRegistry
+from NovaHarness.tools.tool import tool
 
 
 @tool

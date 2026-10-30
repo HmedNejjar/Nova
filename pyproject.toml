@@ -1,31 +1,57 @@
 [build-system]
-requires = ["setuptools>=68", "wheel"]
+requires = ["setuptools>=77", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "Nova-Harness"
-version = "1.0.0"
-description = "A simple harness compatible with LiteLLM models."
+name = "nova-harness"
+version = "0.1.0"
+description = "A small agent harness for any LiteLLM model: tool-calling loop, allow/ask/deny policies, human approval and persistent memory."
 readme = "README.md"
 requires-python = ">=3.10"   # needed for `X | Y` hints and types.UnionType
-license = { text = "MIT" }
+license = "MIT"
+license-files = ["LICENSE"]
 authors = [{ name = "Marhfoul Bakr" }]
+keywords = ["llm", "agent", "agents", "litellm", "tool-calling", "harness", "function-calling"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Typing :: Typed",
+]
 dependencies = [
     "litellm>=1.40",
     "pydantic>=2.0",
 ]
 
 [project.optional-dependencies]
+search = ["ddgs"]   # pip install "nova-harness[search]" for DuckDuckGo web search
 dev = [
     "pytest>=8.0",
     "ruff>=0.5",
     "mypy>=1.10",
 ]
 
+[project.urls]
+Homepage = "https://github.com/HmedNejjar/Nova/tree/nova-harness"
+Source = "https://github.com/HmedNejjar/Nova/tree/nova-harness"
+Issues = "https://github.com/HmedNejjar/Nova/issues"
+
 # --- Packaging: src/ layout ---------------------------------------------------
-# Only folders with an __init__.py are found: harness, models, tools.
+# One top-level package, NovaHarness, with harness/, models/ and tools/ inside it.
+# `include` keeps stray folders in src/ (old copies, egg-info) out of the wheel.
 [tool.setuptools.packages.find]
 where = ["src"]
+include = ["NovaHarness*"]
+
+[tool.setuptools.package-data]
+NovaHarness = ["py.typed"]
 
 # --- pytest -------------------------------------------------------------------
 [tool.pytest.ini_options]

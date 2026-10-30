@@ -1,7 +1,7 @@
 from typing import Iterable, Iterator, Mapping
 
-from harness.errors import ToolDefinitionError, ToolNotFoundError
-from harness.messages import ToolSpec
+from NovaHarness.harness.errors import ToolDefinitionError, ToolNotFoundError
+from NovaHarness.harness.messages import ToolSpec
 from .tool import Tool
 
 class ToolRegistry(Mapping[str, Tool]):

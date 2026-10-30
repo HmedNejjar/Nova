@@ -1,6 +1,6 @@
 import pytest
-from harness.errors import ToolDefinitionError
-from tools.tool import Tool, tool
+from NovaHarness.harness.errors import ToolDefinitionError
+from NovaHarness.tools.tool import Tool, tool
 
 def test_required_vs_default():
     @tool

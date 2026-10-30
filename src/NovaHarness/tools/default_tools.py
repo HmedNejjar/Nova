@@ -35,9 +35,9 @@ from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any
 
-from harness.errors import InvalidArgumentsError, ToolExecutionError
-from harness.policies import Policy
-from tools.tool import Tool, tool
+from NovaHarness.harness.errors import InvalidArgumentsError, ToolExecutionError
+from NovaHarness.harness.policies import Policy
+from NovaHarness.tools.tool import Tool, tool
 
 # The Executor trims results too (max_output_len), so these are upper bounds.
 MAX_READ_BYTES = 50_000

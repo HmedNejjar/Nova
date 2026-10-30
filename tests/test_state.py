@@ -1,6 +1,6 @@
 #type: ignore
-from harness.messages import Message
-from harness.state import ConversationState
+from NovaHarness.harness.messages import Message
+from NovaHarness.harness.state import ConversationState
 
 
 def test_new_state_is_empty():

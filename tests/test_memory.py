@@ -3,8 +3,8 @@ from contextlib import closing
 
 import pytest
 
-from harness.errors import InvalidArgumentsError, ToolExecutionError
-from harness.memory import LAST_N_LIMIT, MAX_FACT_VALUE_LEN, MAX_KEY_LEN, MAX_NOTE_VALUE_LEN, MemoryStore, _TableSpec
+from NovaHarness.harness.errors import InvalidArgumentsError, ToolExecutionError
+from NovaHarness.harness.memory import LAST_N_LIMIT, MAX_FACT_VALUE_LEN, MAX_KEY_LEN, MAX_NOTE_VALUE_LEN, MemoryStore, _TableSpec
 
 
 @pytest.fixture

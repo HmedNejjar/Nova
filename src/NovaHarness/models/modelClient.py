@@ -2,8 +2,8 @@ import json
 from typing import Any
 from uuid import uuid4
 
-from harness.errors import ModelError
-from harness.messages import Message, ModelResponse, ToolCall, ToolSpec
+from NovaHarness.harness.errors import ModelError
+from NovaHarness.harness.messages import Message, ModelResponse, ToolCall, ToolSpec
 
 
 # --- harness -> provider ---------------------------------------------------------------

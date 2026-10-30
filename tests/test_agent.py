@@ -4,13 +4,13 @@ from types import SimpleNamespace as NS
 
 import pytest
 from fakes import FakeApprover, FakeModelClient
-from harness._prompts import BASE, MEMORY
-from harness.agent import MEMORY_TOOLS, Agent
-from harness.approval import CLIApprover
-from harness.memory import MemoryStore
-from harness.messages import ModelResponse, ToolCall
-from harness.policies import Policy
-from tools.tool import tool
+from NovaHarness.harness._prompts import BASE, MEMORY
+from NovaHarness.harness.agent import MEMORY_TOOLS, Agent
+from NovaHarness.harness.approval import CLIApprover
+from NovaHarness.harness.memory import MemoryStore
+from NovaHarness.harness.messages import ModelResponse, ToolCall
+from NovaHarness.harness.policies import Policy
+from NovaHarness.tools.tool import tool
 
 DEFAULT_TOOLS = {
     "calculator",
@@ -80,7 +80,7 @@ def test_web_search_is_added_when_a_search_fn_is_given(make):
 
 
 def test_without_default_tools_only_memory_and_caller_tools_remain(make):
-    agent = make(tools=[greet], deflt_tools=False)
+    agent = make(tools=[greet], use_default_tools=False)
     assert set(agent.tools) == MEMORY_TOOLS | {"greet"}
 
 

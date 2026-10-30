@@ -1,8 +1,8 @@
 from dataclasses import dataclass
 import types
 from typing import Any, Callable, Union, get_args, get_origin, get_type_hints
-from harness.messages import ToolSpec
-from harness.errors import ToolDefinitionError
+from NovaHarness.harness.messages import ToolSpec
+from NovaHarness.harness.errors import ToolDefinitionError
 
 import inspect
 

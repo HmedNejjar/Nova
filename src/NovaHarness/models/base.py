@@ -1,4 +1,4 @@
-from harness.messages import Message, ModelResponse, ToolSpec
+from NovaHarness.harness.messages import Message, ModelResponse, ToolSpec
 from typing import Protocol
 
 class ModelClient(Protocol):

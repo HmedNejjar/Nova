@@ -1,17 +1,17 @@
 from typing import Iterable, Any
 from pathlib import Path
 
-from models.base import ModelClient
+from NovaHarness.models.base import ModelClient
 from .messages import Message
 from .runtime import Runtime
 from .executor import Executor
 from .policies import Policy, Action
 from .approval import ToolApprover, CLIApprover
-from tools.tool import Tool
-from tools.registry import ToolRegistry
+from NovaHarness.tools.tool import Tool
+from NovaHarness.tools.registry import ToolRegistry
 from .state import ConversationState
 from .memory import MemoryStore, make_memory_tools
-from tools.default_tools import default_tools, default_policy, SearchFn
+from NovaHarness.tools.default_tools import default_tools, default_policy, SearchFn
 from ._prompts import build_system_prompt
 
 
@@ -27,7 +27,7 @@ class Agent:
         
         # 1. Set Model client
         if isinstance(model, str):
-            from models.modelClient import LiteLLMClient
+            from NovaHarness.models.modelClient import LiteLLMClient
             self.model: ModelClient = LiteLLMClient(model, **model_kwargs)
         else:
             self.model = model
