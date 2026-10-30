@@ -19,7 +19,7 @@ from tools.tool import tool
 DENY_READ = Policy(deny=frozenset({"read_file"}))
 ASK_READ = Policy(ask=frozenset({"read_file"}))
 
-
+FINAL = "You have reached the step limit"
 # --- helpers ---------------------------------------------------------------------
 
 
@@ -69,6 +69,7 @@ def build(
     approver: Any = None,
     max_steps: int = 10,
     max_denials: int = 2,
+    final_answer: bool = True,
 ) -> Rig:
     executed: list[str] = []
 
@@ -291,13 +292,49 @@ def test_invalid_arguments_become_an_error_result(bad_args):
 
 
 def test_max_steps_stops_a_run_that_never_answers():
-    rig = build([use(read("a"))] * 3, max_steps=3)
+    rig = build([use(read("a"))] * 3, max_steps=3, final_answer=False)
     with pytest.raises(MaxStepsReachedError):
         rig.runtime.run(ConversationState(), "go")
     assert len(rig.model.calls) == 3  # no fourth call
 
+# --- final answer ---------------------------------------------------------------------------
 
 def test_model_errors_propagate_to_the_caller():
     rig = build([ModelError("rate limited")])
     with pytest.raises(ModelError):
+        rig.runtime.run(ConversationState(), "go")
+        
+def test_out_of_steps_asks_once_more_without_tools():
+    rig = build([use(read("a")), use(read("b")), say("best guess")], max_steps=2)
+    state = ConversationState()
+    assert rig.runtime.run(state, "go") == "best guess"
+
+    messages, tools = rig.model.calls[-1]
+    assert tools == ()
+    assert messages[-1].role == "user" and messages[-1].content.startswith(FINAL)
+
+
+def test_final_answer_instruction_is_not_saved_to_history():
+    rig = build([use(read("a")), say("best guess")], max_steps=1)
+    state = ConversationState()
+    rig.runtime.run(state, "go")
+    assert roles(state) == ["user", "assistant", "tool", "assistant"]
+    assert not any((m.content or "").startswith(FINAL) for m in state.messages)
+
+
+def test_tool_calls_in_the_final_answer_are_dropped():
+    with_calls = ModelResponse(
+        response="partial answer",
+        tool_calls=(ToolCall(tool_name="read_file", tool_id="c9", tool_args={"path": "x"}),),
+    )
+    rig = build([use(read("a")), with_calls], max_steps=1)
+    state = ConversationState()
+    assert rig.runtime.run(state, "go") == "partial answer"
+    assert state.messages[-1].tool_calls is None
+    assert rig.executed == ["a"]  # the dropped call never ran
+
+
+def test_final_answer_with_only_tool_calls_still_raises():
+    rig = build([use(read("a")), use(read("b"))], max_steps=1)
+    with pytest.raises(MaxStepsReachedError, match="no final answer"):
         rig.runtime.run(ConversationState(), "go")

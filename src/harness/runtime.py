@@ -10,8 +10,12 @@ import json
 
 DenialCounts = dict[tuple[str, str], int] # (tool name, canonical args) -> times denied
 
+FINAL_ANSWER_PROMPT = ("""You have reached the step limit, so no more tools can run. Using only the information gathered above, 
+                       give your best final answer to the original request. Say clearly what is incomplete or unverified.""")
+
+
 class Runtime:
-    def __init__(self, model: ModelClient, tool_registry: ToolRegistry, executor: Executor, policy: Policy, approver: ToolApprover, max_steps: int, max_denials: int):
+    def __init__(self, model: ModelClient, tool_registry: ToolRegistry, executor: Executor, policy: Policy, approver: ToolApprover, max_steps: int, max_denials: int, final_answer: bool = True):
         
         self.model = model
         self.tool_registry = tool_registry
@@ -20,7 +24,7 @@ class Runtime:
         self.approver = approver
         self.max_steps = max_steps
         self.max_denials = max_denials
-        
+        self.final_answer = final_answer
     def run(self, state: ConversationState, prompt: str) -> str:
         """Run the conversation with the given prompt."""
         
@@ -57,7 +61,9 @@ class Runtime:
                 # Add the tool response to the conversation history
                 state.add(Message.tool(result= result))
             
-        # Raise MaxStepsReachedError if the conversation exceeds the max steps
+        # Raise MaxStepsReachedError if the conversation exceeds the max steps and final_answer is False
+        if self.final_answer:
+            return self._final_answer(state)
         raise MaxStepsReachedError(f"Stopped after {self.max_steps} steps without a final answer")
         
     def handle(self, call: ToolCall, denials: DenialCounts) -> ToolResult:
@@ -87,6 +93,18 @@ class Runtime:
             return self.executor.run(call)
         except ToolError as e:
             return ToolResult(tool_name=call.tool_name, tool_id=call.tool_id, status="error", tool_result=str(e))
+        
+    def _final_answer(self, state: ConversationState) -> str:
+        """Ask for an answer from what was gathered so far. The instruction is not saved to history."""
+        messages = state.messages + (Message.user(FINAL_ANSWER_PROMPT),)
+        response = self.model.generate(messages, ())
+
+        if not response.response:
+            # Only tool calls came back, so there is no answer to keep.
+            raise MaxStepsReachedError(f"Stopped after {self.max_steps} steps; the model gave no final answer")
+        # Drop any tool calls: they would never get results, and providers reject that history.
+        state.add(Message(role="assistant", content=response.response))
+        return response.response
         
     
     def _ask(self, call: ToolCall, reason: str | None) -> bool:

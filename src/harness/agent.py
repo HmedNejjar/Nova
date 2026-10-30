@@ -23,7 +23,7 @@ MEMORY_TOOLS = frozenset({"save_to_memory", "delete_from_memory"})
 class Agent:
     def __init__(self, model: str | ModelClient, tools: Iterable[Tool] = (), policy: Policy | Rules | None = None, *, use_default_tools: bool = True, root: str | Path = ".",
                  search_fn: SearchFn | None = None, memory: MemoryStore | bool = True, approver: ToolApprover | None = None, system_prompt: str | None = None, instructions: str | None = None,
-                 max_steps: int = 20, max_denials: int = 3,tool_timeout: float = 30.0, **model_kwargs: Any) -> None:
+                 max_steps: int = 20, max_denials: int = 3, final_answer: bool = True, tool_timeout: float = 30.0, **model_kwargs: Any) -> None:
         
         # 1. Set Model client
         if isinstance(model, str):
@@ -65,7 +65,7 @@ class Agent:
         else:
             self.system_prompt = build_system_prompt(root=Path(root), memory=self.memory is not None, instructions=instructions)
         
-        self.runtime = Runtime(self.model, self.tools, self._executor, self.policy, self._approver, max_steps, max_denials)
+        self.runtime = Runtime(self.model, self.tools, self._executor, self.policy, self._approver, max_steps, max_denials, final_answer)
         
         # 6. Conversation state
         self.reset()
